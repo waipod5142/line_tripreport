@@ -17,9 +17,20 @@ export interface QueueSummary {
  * double-process. On failure a message is requeued until MAX_ATTEMPTS, then
  * dead-lettered to 'failed' with last_error (PRD §14.2).
  */
-export async function processQueue(limit = 3): Promise<QueueSummary> {
+// One message per invocation by default: a single slow AI call (kimi-k3 ~50s)
+// already fills most of the serverless budget. The cron runs every minute, and
+// the webhook after() adds an immediate drain, so the queue still keeps up.
+export async function processQueue(limit = 1): Promise<QueueSummary> {
   const admin = createAdminClient();
   const summary: QueueSummary = { claimed: 0, processed: 0, retried: 0, deadLettered: 0 };
+
+  // Visibility timeout: a message left in 'processing' for >3 min means the
+  // worker died mid-flight (e.g. serverless timeout). Requeue it so it retries.
+  await admin
+    .from("line_messages")
+    .update({ processing_status: "queued" })
+    .eq("processing_status", "processing")
+    .lt("updated_at", new Date(Date.now() - 3 * 60_000).toISOString());
 
   const { data: pending } = await admin
     .from("line_messages")

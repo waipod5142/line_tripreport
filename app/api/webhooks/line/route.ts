@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
           }
           if (hasText) {
             // Best-effort immediate processing; pg_cron is the reliable backstop.
-            const q = await processQueue(3);
+            const q = await processQueue();
             console.info(JSON.stringify({ correlationId, stage: "queue", ...q }));
           }
         } catch (err) {

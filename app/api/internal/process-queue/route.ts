@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, after, type NextRequest } from "next/server";
 import { serverEnv } from "@/lib/env";
 import { processQueue } from "@/lib/ai/queue";
 
@@ -8,17 +8,33 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * Drain the message-processing queue. Called by the webhook (after()) for low
- * latency and by pg_cron every minute as the reliable backstop. Authenticated
- * with INTERNAL_JOB_SECRET via x-internal-secret or Authorization: Bearer.
+ * Trigger a queue drain. Returns 202 immediately and does the (slow) AI work in
+ * after(), so the caller's HTTP timeout (pg_cron/pg_net defaults to a few
+ * seconds) can't sever processing mid-flight. Runs every minute via pg_cron and
+ * on-demand from the webhook. Auth: INTERNAL_JOB_SECRET (x-internal-secret or
+ * Authorization: Bearer).
  */
-async function handle(req: NextRequest) {
+function handle(req: NextRequest) {
   const env = serverEnv();
   if (!authorized(req, env.INTERNAL_JOB_SECRET)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const summary = await processQueue(3);
-  return NextResponse.json({ ok: true, ...summary });
+
+  after(async () => {
+    try {
+      const summary = await processQueue();
+      console.info(JSON.stringify({ stage: "process-queue", ...summary }));
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          stage: "process-queue",
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+  });
+
+  return NextResponse.json({ ok: true, triggered: true }, { status: 202 });
 }
 
 export const POST = handle;
