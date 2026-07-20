@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ───────────────────────────────────────────────────────────
+   Design tokens — "Dispatch console, clean & white"
+   Pure white canvas, hairline structure, one customs-ink green
+   accent. Status hues kept low-chroma so the screen stays calm.
+   ─────────────────────────────────────────────────────────── */
+:root {
+  --canvas: #ffffff;
+  --panel: #fafbfa;
+  --panel-2: #f4f6f4;
+
+  --ink: #121614;
+  --ink-soft: #3a423e;
+  --muted: #6c736f;
+  --faint: #9aa19d;
+
+  --line: #e8ebe9;
+  --line-strong: #d6dbd8;
+
+  --accent: #0f5c4b;
+  --accent-ink: #0b4638;
+  --accent-soft: #e7f1ed;
+
+  /* Status hues (dot / text). Muted, functional. */
+  --st-neutral: #6c736f;
+  --st-blue: #2f6aa8;
+  --st-teal: #237f6d;
+  --st-amber: #b0791b;
+  --st-green: #2f8f5b;
+  --st-accent: #0f5c4b;
+  --st-indigo: #5a5fb0;
+  --st-violet: #7d5aa8;
+  --st-red: #b4453c;
+}
+
+* {
+  border-color: var(--line);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-thai), var(--font-sans), system-ui, sans-serif;
+  font-feature-settings: "cv05", "ss01";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Numbers, codes, plates, timestamps — the operational identifiers */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Thin scrollbars that match the calm surface */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 999px;
+  border: 3px solid var(--canvas);
+}
+
+/* Focus — visible, quiet, keyboard-first */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+@layer utilities {
+  .eyebrow {
+    font-size: 0.6875rem;
+    line-height: 1rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .hairline {
+    border-color: var(--line);
+  }
+}
