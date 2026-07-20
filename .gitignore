@@ -46,3 +46,4 @@ yarn-error.log*
 .agents/
 .mcp.json
 skills-lock.json
+.env*

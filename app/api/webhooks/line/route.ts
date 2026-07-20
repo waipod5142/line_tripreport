@@ -1,9 +1,13 @@
 import crypto from "node:crypto";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, after, type NextRequest } from "next/server";
 import { serverEnv } from "@/lib/env";
 import { verifyLineSignature } from "@/lib/line/signature";
-import { LineWebhookBodySchema } from "@/lib/line/webhook-schema";
+import {
+  LineWebhookBodySchema,
+  MEDIA_MESSAGE_TYPES,
+} from "@/lib/line/webhook-schema";
 import { ingestWebhookBody } from "@/lib/line/ingest";
+import { retrievePendingAttachments } from "@/lib/line/attachments";
 
 // Must run on the Node runtime (crypto) and never be statically optimized.
 export const runtime = "nodejs";
@@ -46,6 +50,31 @@ export async function POST(req: NextRequest) {
   //    the unique webhookEventId makes that replay safe.
   try {
     const summary = await ingestWebhookBody(parsed, parsed.destination);
+
+    // LINE content is ephemeral — fetch media right after responding, so the
+    // webhook itself still returns fast (Vercel keeps the function alive).
+    const hasMedia = parsed.events.some(
+      (e) =>
+        e.message &&
+        (MEDIA_MESSAGE_TYPES as readonly string[]).includes(e.message.type),
+    );
+    if (hasMedia) {
+      after(async () => {
+        try {
+          const r = await retrievePendingAttachments(20);
+          console.info(JSON.stringify({ correlationId, stage: "attachments", ...r }));
+        } catch (err) {
+          console.error(
+            JSON.stringify({
+              correlationId,
+              stage: "attachments",
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      });
+    }
+
     console.info(
       JSON.stringify({ correlationId, stage: "ingest", outcome: "ok", ...summary }),
     );
