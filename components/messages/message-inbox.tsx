@@ -1,18 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import {
+  Check,
   FileText,
   ImageIcon,
   Link2,
+  Loader2,
   MapPin,
   MessageSquare,
-  RotateCw,
   Search,
+  Sparkles,
   Sticker,
 } from "lucide-react";
-import { Code } from "@/components/ui/code";
+import { processMessageAction } from "@/app/(dashboard)/messages/actions";
 import type { Classification, LineMessage } from "@/lib/types";
 import { cn, formatDateTime } from "@/lib/utils";
 
@@ -156,24 +158,17 @@ export function MessageInbox({ messages }: { messages: LineMessage[] }) {
                         {cls.label}
                       </span>
                     )}
-                    {m.linkedTripId ? (
+                    {m.linkedTripId && (
                       <Link
                         href={`/trips/${m.linkedTripId}`}
                         className="inline-flex items-center gap-1 text-2xs font-medium text-accent hover:text-accent-ink"
                       >
-                        <Link2 className="h-3 w-3" />
-                        <Code className="text-2xs">
-                          {tripCode(m.linkedTripId)}
-                        </Code>
+                        <Link2 className="h-3 w-3" /> View trip
                       </Link>
-                    ) : (
-                      <button className="inline-flex items-center gap-1 text-2xs font-medium text-muted hover:text-ink">
-                        <Link2 className="h-3 w-3" /> Link to trip
-                      </button>
                     )}
-                    <button className="inline-flex items-center gap-1 text-2xs font-medium text-muted hover:text-ink">
-                      <RotateCw className="h-3 w-3" /> Reprocess
-                    </button>
+                    {m.messageType === "text" && (
+                      <RunAiButton messageId={m.id} status={m.processingStatus} />
+                    )}
                   </div>
                 </div>
               </li>
@@ -190,16 +185,66 @@ export function MessageInbox({ messages }: { messages: LineMessage[] }) {
   );
 }
 
-// Map internal trip id → its shipment code for display.
-function tripCode(id: string): string {
-  const map: Record<string, string> = {
-    "tpl6-5": "TPL6.5",
-    "tpl7-1": "TPL7.1",
-    "tpl7-2": "TPL7.2",
-    "tpl6-9": "TPL6.9",
-    "lcb-4488": "LCB4488",
-    "mkd-2207": "MKD-2207",
-    "draft-7743": "TPL7.3",
+// Manual AI trigger for a single message. Runs synchronously (~50s for
+// kimi-k3), so it shows a pending state and then the outcome inline.
+function RunAiButton({
+  messageId,
+  status,
+}: {
+  messageId: string;
+  status: LineMessage["processingStatus"];
+}) {
+  const [pending, startTransition] = useTransition();
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const label =
+    status === "processed" || status === "review_required" ? "Re-run AI" : "Run AI";
+
+  const run = () => {
+    setResult(null);
+    startTransition(async () => {
+      const r = await processMessageAction(messageId);
+      if (r.ok) {
+        const msg =
+          r.action === "created"
+            ? "Trip created"
+            : r.action === "updated"
+              ? "Trip updated"
+              : r.action === "review"
+                ? "Sent to review"
+                : "Processed";
+        setResult({ ok: true, msg });
+      } else {
+        setResult({ ok: false, msg: r.error ?? "Failed" });
+      }
+    });
   };
-  return map[id] ?? id;
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <button
+        onClick={run}
+        disabled={pending}
+        className="inline-flex items-center gap-1 text-2xs font-medium text-accent hover:text-accent-ink disabled:opacity-60"
+      >
+        {pending ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <Sparkles className="h-3 w-3" />
+        )}
+        {pending ? "Running AI…" : label}
+      </button>
+      {result && (
+        <span
+          className={cn(
+            "inline-flex items-center gap-0.5 text-2xs",
+            result.ok ? "text-[var(--st-green)]" : "text-[var(--st-red)]",
+          )}
+        >
+          {result.ok && <Check className="h-3 w-3" />}
+          {result.msg}
+        </span>
+      )}
+    </span>
+  );
 }

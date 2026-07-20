@@ -8,7 +8,6 @@ import {
 } from "@/lib/line/webhook-schema";
 import { ingestWebhookBody } from "@/lib/line/ingest";
 import { retrievePendingAttachments } from "@/lib/line/attachments";
-import { processQueue } from "@/lib/ai/queue";
 
 // Must run on the Node runtime (crypto) and never be statically optimized.
 export const runtime = "nodejs";
@@ -52,32 +51,26 @@ export async function POST(req: NextRequest) {
   try {
     const summary = await ingestWebhookBody(parsed, parsed.destination);
 
-    // LINE content is ephemeral — fetch media right after responding, so the
-    // webhook itself still returns fast (Vercel keeps the function alive).
+    // LINE content is ephemeral — fetch media right after responding (file
+    // capture, not AI). AI extraction is triggered MANUALLY from the UI, so we
+    // do NOT auto-process text here; messages sit as 'queued' until a user runs
+    // the AI worker.
     const hasMedia = parsed.events.some(
       (e) =>
         e.message &&
         (MEDIA_MESSAGE_TYPES as readonly string[]).includes(e.message.type),
     );
-    const hasText = parsed.events.some((e) => e.message?.type === "text");
 
-    if (hasMedia || hasText) {
+    if (hasMedia) {
       after(async () => {
         try {
-          if (hasMedia) {
-            const r = await retrievePendingAttachments(20);
-            console.info(JSON.stringify({ correlationId, stage: "attachments", ...r }));
-          }
-          if (hasText) {
-            // Best-effort immediate processing; pg_cron is the reliable backstop.
-            const q = await processQueue();
-            console.info(JSON.stringify({ correlationId, stage: "queue", ...q }));
-          }
+          const r = await retrievePendingAttachments(20);
+          console.info(JSON.stringify({ correlationId, stage: "attachments", ...r }));
         } catch (err) {
           console.error(
             JSON.stringify({
               correlationId,
-              stage: "after",
+              stage: "attachments",
               error: err instanceof Error ? err.message : String(err),
             }),
           );

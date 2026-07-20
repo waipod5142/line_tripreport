@@ -4,6 +4,8 @@ import { listMessages } from "@/lib/data/messages";
 
 // Always read fresh from Supabase (new messages arrive continuously).
 export const dynamic = "force-dynamic";
+// The manual "Run AI" server action calls kimi-k3 (~50s), so allow the max.
+export const maxDuration = 60;
 
 export default async function MessagesPage() {
   const messages = await listMessages();
