@@ -1,9 +1,11 @@
 import { PageHeader } from "@/components/ui/page-header";
 import { TripsTable } from "@/components/trips/trips-table";
-import { getTrips } from "@/lib/mock/data";
+import { listTrips } from "@/lib/data/trips";
 
-export default function TripsPage() {
-  const trips = getTrips();
+export const dynamic = "force-dynamic";
+
+export default async function TripsPage() {
+  const trips = await listTrips();
   return (
     <>
       <PageHeader

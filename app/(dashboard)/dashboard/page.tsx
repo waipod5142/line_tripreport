@@ -5,26 +5,37 @@ import { Code } from "@/components/ui/code";
 import { PageHeader } from "@/components/ui/page-header";
 import { JourneyPips } from "@/components/trips/journey-rail";
 import { ReviewBadge, StatusBadge } from "@/components/ui/status";
-import { getReviewItems, getTrips } from "@/lib/mock/data";
+import { listTrips } from "@/lib/data/trips";
+import { createClient } from "@/lib/supabase/server";
 import type { TripStatus } from "@/lib/types";
-import { cn, formatDate, formatDateTime, timeAgo } from "@/lib/utils";
+import { cn, formatDateTime, timeAgo } from "@/lib/utils";
 
-export default function DashboardPage() {
-  const trips = getTrips();
-  const reviews = getReviewItems();
+export const dynamic = "force-dynamic";
+
+export default async function DashboardPage() {
+  const trips = await listTrips();
+  const supabase = await createClient();
+  const { count: reviewCount } = await supabase
+    .from("review_items")
+    .select("id", { count: "exact", head: true })
+    .in("status", ["open", "in_review"]);
+
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(
+    new Date(),
+  );
 
   const count = (fn: (s: TripStatus) => boolean) =>
     trips.filter((t) => fn(t.status)).length;
 
   const stats = [
-    { label: "Trips today", value: trips.filter((t) => t.assignmentDate === "2026-07-19").length, tone: "ink" as const },
+    { label: "Trips today", value: trips.filter((t) => t.assignmentDate === today).length, tone: "ink" as const },
     { label: "Assigned", value: count((s) => s === "assigned"), tone: "ink" as const },
     { label: "Border", value: count((s) => s === "border_processing"), tone: "ink" as const },
     { label: "In transit", value: count((s) => s === "in_transit"), tone: "accent" as const },
     { label: "Arrived / unloading", value: count((s) => s === "arrived" || s === "unloading" || s === "loading"), tone: "ink" as const },
     { label: "Completed", value: count((s) => s === "completed"), tone: "ink" as const },
     { label: "Exceptions", value: count((s) => s === "exception"), tone: "alert" as const },
-    { label: "Awaiting review", value: reviews.length, tone: "warn" as const },
+    { label: "Awaiting review", value: reviewCount ?? 0, tone: "warn" as const },
   ];
 
   const active = trips
@@ -35,7 +46,7 @@ export default function DashboardPage() {
     .sort((a, b) => new Date(b.lastUpdateAt).getTime() - new Date(a.lastUpdateAt).getTime())
     .slice(0, 5);
 
-  const now = new Date("2026-07-19T14:30:00+07:00").getTime();
+  const now = Date.now();
   const overdue = trips.filter(
     (t) =>
       t.plannedDeliveryAt &&
@@ -48,7 +59,7 @@ export default function DashboardPage() {
       <PageHeader
         eyebrow="Operations"
         title="Dashboard"
-        description="Live state across every active trip. Saturday 19 July 2026."
+        description="Live state across every active trip, scoped to your organization."
       />
 
       {/* Stat readouts */}
@@ -186,9 +197,12 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <p className="mt-6 text-2xs text-faint">
-        Showing sample data · assignment dates around {formatDate("2026-07-19")}
-      </p>
+      {trips.length === 0 && (
+        <p className="mt-6 text-2xs text-faint">
+          No trips yet — assignments become trips once the AI worker processes an
+          assignment message.
+        </p>
+      )}
     </>
   );
 }

@@ -6,6 +6,7 @@ import { useState } from "react";
 import {
   ClipboardCheck,
   LayoutDashboard,
+  LogOut,
   type LucideIcon,
   Menu,
   MessageSquare,
@@ -24,13 +25,29 @@ interface NavItem {
   badge?: number;
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  system_administrator: "Administrator",
+  operations_manager: "Ops manager",
+  dispatcher: "Dispatcher",
+  viewer: "Viewer",
+};
+
 export function Shell({
   children,
   reviewCount,
+  user,
 }: {
   children: React.ReactNode;
   reviewCount: number;
+  user: { name: string; email: string; role: string };
 }) {
+  const initials = user.name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -103,15 +120,26 @@ export function Shell({
         </div>
         <div className="border-t border-line px-4 py-3">
           <div className="flex items-center gap-2.5">
-            <span className="grid h-8 w-8 place-items-center rounded-full bg-panel-2 text-xs font-semibold text-ink-soft">
-              WA
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-panel-2 text-xs font-semibold text-ink-soft">
+              {initials || "U"}
             </span>
-            <div className="min-w-0 leading-tight">
+            <div className="min-w-0 flex-1 leading-tight">
               <div className="truncate text-xs font-medium text-ink">
-                Wai (Ops manager)
+                {user.name}
+                <span className="text-muted"> · {ROLE_LABELS[user.role] ?? user.role}</span>
               </div>
-              <div className="truncate text-2xs text-muted">waipody@gmail.com</div>
+              <div className="truncate text-2xs text-muted">{user.email}</div>
             </div>
+            <form action="/auth/signout" method="post">
+              <button
+                type="submit"
+                className="grid h-7 w-7 place-items-center rounded text-muted hover:bg-panel-2 hover:text-ink"
+                aria-label="Sign out"
+                title="Sign out"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </form>
           </div>
         </div>
       </aside>

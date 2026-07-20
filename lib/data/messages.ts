@@ -1,13 +1,9 @@
 import "server-only";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import type { LineMessage } from "@/lib/types";
 
-// Live read of captured LINE messages for the operations UI.
-//
-// TEMPORARY: uses the service-role client because auth/login isn't wired yet, so
-// there's no session for RLS to scope. The key stays server-side. Once Supabase
-// Auth is added, swap this for the RLS server client (lib/supabase/server) and
-// drop the explicit org handling — RLS will scope automatically.
+// Live read of captured LINE messages. Uses the RLS server client, so results
+// are automatically scoped to the signed-in user's organization.
 
 type Row = {
   id: string;
@@ -24,8 +20,8 @@ type Row = {
 };
 
 export async function listMessages(limit = 100): Promise<LineMessage[]> {
-  const admin = createAdminClient();
-  const { data, error } = await admin
+  const supabase = await createClient();
+  const { data, error } = await supabase
     .from("line_messages")
     .select(
       `id, line_message_id, message_type, text_content, sent_at, processing_status, classification,

@@ -16,8 +16,10 @@ import { PageHeader } from "@/components/ui/page-header";
 import { EventTimeline } from "@/components/trips/event-timeline";
 import { JourneyRail } from "@/components/trips/journey-rail";
 import { ReviewBadge, StatusPill } from "@/components/ui/status";
-import { getMessagesForTrip, getTripById } from "@/lib/mock/data";
+import { getTripById, getTripMessages } from "@/lib/data/trips";
 import { formatDate, formatDateTime, timeAgo } from "@/lib/utils";
+
+export const dynamic = "force-dynamic";
 
 function Field({
   label,
@@ -40,10 +42,10 @@ export default async function TripDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const trip = getTripById(id);
+  const trip = await getTripById(id);
   if (!trip) notFound();
 
-  const messages = getMessagesForTrip(trip.id);
+  const messages = await getTripMessages(trip.id);
   const bytes = (n: number) =>
     n > 1_000_000 ? `${(n / 1_000_000).toFixed(1)} MB` : `${Math.round(n / 1000)} KB`;
 

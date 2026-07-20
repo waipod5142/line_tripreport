@@ -41,11 +41,12 @@ export function formatTime(iso: string | null): string {
   }).format(new Date(iso));
 }
 
-/** Relative age, e.g. "3h ago", against a fixed "now" for stable mock output. */
-export function timeAgo(iso: string | null, now = MOCK_NOW): string {
+/** Relative age, e.g. "3h ago". Defaults to the real current time. */
+export function timeAgo(iso: string | null, now = new Date().toISOString()): string {
   if (!iso) return "—";
   const diffMs = new Date(now).getTime() - new Date(iso).getTime();
   const mins = Math.round(diffMs / 60000);
+  if (mins < 0) return "just now";
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
   const hours = Math.round(mins / 60);
