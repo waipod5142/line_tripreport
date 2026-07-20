@@ -8,6 +8,7 @@ import {
 } from "@/lib/line/webhook-schema";
 import { ingestWebhookBody } from "@/lib/line/ingest";
 import { retrievePendingAttachments } from "@/lib/line/attachments";
+import { processQueue } from "@/lib/ai/queue";
 
 // Must run on the Node runtime (crypto) and never be statically optimized.
 export const runtime = "nodejs";
@@ -58,16 +59,25 @@ export async function POST(req: NextRequest) {
         e.message &&
         (MEDIA_MESSAGE_TYPES as readonly string[]).includes(e.message.type),
     );
-    if (hasMedia) {
+    const hasText = parsed.events.some((e) => e.message?.type === "text");
+
+    if (hasMedia || hasText) {
       after(async () => {
         try {
-          const r = await retrievePendingAttachments(20);
-          console.info(JSON.stringify({ correlationId, stage: "attachments", ...r }));
+          if (hasMedia) {
+            const r = await retrievePendingAttachments(20);
+            console.info(JSON.stringify({ correlationId, stage: "attachments", ...r }));
+          }
+          if (hasText) {
+            // Best-effort immediate processing; pg_cron is the reliable backstop.
+            const q = await processQueue(3);
+            console.info(JSON.stringify({ correlationId, stage: "queue", ...q }));
+          }
         } catch (err) {
           console.error(
             JSON.stringify({
               correlationId,
-              stage: "attachments",
+              stage: "after",
               error: err instanceof Error ? err.message : String(err),
             }),
           );

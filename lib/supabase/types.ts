@@ -291,11 +291,13 @@ export type Database = {
           created_at: string
           id: string
           is_unsent: boolean
+          last_error: string | null
           line_group_id: string | null
           line_member_id: string | null
           line_message_id: string | null
           message_type: string
           organization_id: string | null
+          processing_attempts: number
           processing_status: string
           quoted_line_message_id: string | null
           raw_message: Json
@@ -309,11 +311,13 @@ export type Database = {
           created_at?: string
           id?: string
           is_unsent?: boolean
+          last_error?: string | null
           line_group_id?: string | null
           line_member_id?: string | null
           line_message_id?: string | null
           message_type: string
           organization_id?: string | null
+          processing_attempts?: number
           processing_status?: string
           quoted_line_message_id?: string | null
           raw_message: Json
@@ -327,11 +331,13 @@ export type Database = {
           created_at?: string
           id?: string
           is_unsent?: boolean
+          last_error?: string | null
           line_group_id?: string | null
           line_member_id?: string | null
           line_message_id?: string | null
           message_type?: string
           organization_id?: string | null
+          processing_attempts?: number
           processing_status?: string
           quoted_line_message_id?: string | null
           raw_message?: Json

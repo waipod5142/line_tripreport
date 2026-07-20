@@ -23,7 +23,13 @@ export interface IngestSummary {
   outcomes: Record<EventOutcome, number>;
 }
 
-const PROCESSABLE = new Set(["image", "file", "video", "audio", "text", "location"]);
+// Text messages are queued for AI extraction; media is captured ('stored') for
+// the attachment worker; anything else is just recorded ('processed').
+function initialStatus(messageType: string): string {
+  if (messageType === "text") return "queued";
+  if ((MEDIA_MESSAGE_TYPES as readonly string[]).includes(messageType)) return "stored";
+  return "processed";
+}
 
 /** Entry point: process a verified, parsed webhook body. */
 export async function ingestWebhookBody(
@@ -157,7 +163,7 @@ async function handleEvent(
       text_content: msg.text ?? null,
       quoted_line_message_id: msg.quotedMessageId ?? null,
       sent_at: new Date(event.timestamp).toISOString(),
-      processing_status: PROCESSABLE.has(msg.type) ? "stored" : "processed",
+      processing_status: initialStatus(msg.type),
       raw_message: event as unknown as Json,
     })
     .select("id")
