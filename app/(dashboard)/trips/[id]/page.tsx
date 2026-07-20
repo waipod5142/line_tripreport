@@ -69,6 +69,7 @@ export default async function TripDetailPage({
         }`}
         actions={
           <>
+            <ResummariseButton tripId={trip.id} />
             <Button variant="secondary" size="sm">
               <PenLine className="h-3.5 w-3.5" /> Edit
             </Button>
@@ -290,10 +291,7 @@ export default async function TripDetailPage({
           </Card>
 
           <Card>
-            <CardHeader
-              title="Rolling summary"
-              action={<ResummariseButton tripId={trip.id} />}
-            />
+            <CardHeader title="Rolling summary" />
             <CardBody className="space-y-3">
               <div>
                 <div className="eyebrow mb-1">ไทย</div>
