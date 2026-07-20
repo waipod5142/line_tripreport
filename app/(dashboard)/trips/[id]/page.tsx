@@ -17,9 +17,12 @@ import { EventTimeline } from "@/components/trips/event-timeline";
 import { JourneyRail } from "@/components/trips/journey-rail";
 import { ReviewBadge, StatusPill } from "@/components/ui/status";
 import { getTripById, getTripMessages } from "@/lib/data/trips";
+import { ResummariseButton } from "@/components/trips/resummarise-button";
 import { formatDate, formatDateTime, timeAgo } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
+// The Re-summarise server action calls kimi-k3 (~50s).
+export const maxDuration = 60;
 
 function Field({
   label,
@@ -289,9 +292,7 @@ export default async function TripDetailPage({
           <Card>
             <CardHeader
               title="Rolling summary"
-              action={
-                <span className="text-2xs text-faint">Recalculated on update</span>
-              }
+              action={<ResummariseButton tripId={trip.id} />}
             />
             <CardBody className="space-y-3">
               <div>
