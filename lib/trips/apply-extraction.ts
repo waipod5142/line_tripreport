@@ -1,7 +1,7 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json, TablesUpdate } from "@/lib/supabase/types";
-import type { TripExtraction } from "@/lib/ai/schemas";
+import { TripExtractionSchema, type TripExtraction } from "@/lib/ai/schemas";
 import {
   AUTO_APPLY_THRESHOLD,
   REVIEW_THRESHOLD,
@@ -529,4 +529,140 @@ async function audit(
     before_json: (before ?? null) as Json,
     after_json: (after ?? null) as Json,
   });
+}
+
+// ─────────────────────── human review resolution (§16) ───────────────────────
+
+export interface ReviewResolution {
+  ok: boolean;
+  tripId: string | null;
+  error?: string;
+}
+
+/**
+ * A human accepts a review item: force-apply its extraction to the trip
+ * (bypassing the confidence gate — a person confirmed it), then resolve the
+ * item and mark the source message processed. Creates the trip if the item was
+ * never linked to one.
+ */
+export async function acceptReviewItem(
+  reviewItemId: string,
+  userId: string,
+): Promise<ReviewResolution> {
+  const admin = createAdminClient();
+
+  const { data: item } = await admin
+    .from("review_items")
+    .select("id, organization_id, message_id, trip_id, proposed_changes, status")
+    .eq("id", reviewItemId)
+    .single();
+  if (!item) return { ok: false, tripId: null, error: "Review item not found." };
+  if (item.status === "resolved" || item.status === "dismissed") {
+    return { ok: false, tripId: item.trip_id, error: "Already resolved." };
+  }
+  if (!item.message_id) {
+    return { ok: false, tripId: null, error: "Source message is missing." };
+  }
+
+  const raw = (item.proposed_changes as { extraction?: unknown } | null)?.extraction;
+  const parsed = TripExtractionSchema.safeParse(raw ?? {});
+  if (!parsed.success) {
+    return { ok: false, tripId: null, error: "Proposed changes are unreadable." };
+  }
+  const extraction = parsed.data;
+  const orgId = item.organization_id;
+
+  const { data: msg } = await admin
+    .from("line_messages")
+    .select("id, organization_id, line_group_id, sent_at")
+    .eq("id", item.message_id)
+    .single();
+  if (!msg) return { ok: false, tripId: null, error: "Source message not found." };
+  const message = {
+    id: msg.id,
+    organizationId: orgId,
+    lineGroupId: msg.line_group_id,
+    sentAt: msg.sent_at,
+  };
+
+  // Target the trip the reviewer was shown; if none, create it from the code.
+  let tripId = item.trip_id;
+  const code = normalizeShipmentCode(extraction.shipmentCode);
+  if (!tripId) {
+    if (!code) {
+      return {
+        ok: false,
+        tripId: null,
+        error: "No shipment code — edit the message, or link it to a trip first.",
+      };
+    }
+    tripId = await createTrip(admin, message, extraction, code);
+    await audit(admin, orgId, "trip.created", tripId, null, {
+      shipment_code: code,
+      via: "review_accept",
+    });
+  } else {
+    // Human override: apply every provided scalar, ignoring confidence.
+    const updates: Record<string, string | null> = {};
+    for (const f of SCALAR_FIELDS) {
+      const v = f.value(extraction);
+      if (v != null) updates[f.col] = v;
+    }
+    if (Object.keys(updates).length > 0) {
+      await admin.from("trips").update(updates as TablesUpdate<"trips">).eq("id", tripId);
+    }
+  }
+
+  const eventsAdded = await applyEntitiesAndEvents(admin, tripId, orgId, message, extraction);
+  await linkMessage(admin, message.id, tripId, "review_accept", extraction.confidence.overall);
+  await recomputeTrip(admin, tripId, extraction);
+
+  await admin
+    .from("review_items")
+    .update({ status: "resolved", resolved_by: userId, resolved_at: new Date().toISOString() })
+    .eq("id", reviewItemId);
+  await setMessageStatus(admin, message.id, "processed", extraction.classification);
+  await audit(admin, orgId, "review.accepted", tripId, null, {
+    review_item_id: reviewItemId,
+    events_added: eventsAdded,
+  });
+
+  return { ok: true, tripId };
+}
+
+/**
+ * A human dismisses a review item: no trip changes; mark the item dismissed and
+ * the source message processed so it stops recirculating.
+ */
+export async function dismissReviewItem(
+  reviewItemId: string,
+  userId: string,
+): Promise<ReviewResolution> {
+  const admin = createAdminClient();
+
+  const { data: item } = await admin
+    .from("review_items")
+    .select("id, organization_id, message_id, trip_id, status")
+    .eq("id", reviewItemId)
+    .single();
+  if (!item) return { ok: false, tripId: null, error: "Review item not found." };
+  if (item.status === "resolved" || item.status === "dismissed") {
+    return { ok: true, tripId: item.trip_id };
+  }
+
+  await admin
+    .from("review_items")
+    .update({ status: "dismissed", resolved_by: userId, resolved_at: new Date().toISOString() })
+    .eq("id", reviewItemId);
+  if (item.message_id) {
+    await admin
+      .from("line_messages")
+      .update({ processing_status: "processed" })
+      .eq("id", item.message_id);
+  }
+  await audit(admin, item.organization_id, "review.dismissed", item.trip_id ?? reviewItemId, null, {
+    review_item_id: reviewItemId,
+  });
+
+  return { ok: true, tripId: item.trip_id };
 }

@@ -1,16 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import {
+  AlertCircle,
   Check,
   CheckCheck,
   ExternalLink,
-  Link2,
-  RotateCw,
+  Loader2,
   X,
 } from "lucide-react";
 import { Code } from "@/components/ui/code";
+import {
+  acceptReviewAction,
+  dismissReviewAction,
+} from "@/app/(dashboard)/reviews/actions";
 import type { ReviewItem } from "@/lib/types";
 import { cn, formatDateTime, timeAgo } from "@/lib/utils";
 
@@ -25,8 +29,29 @@ const PRIORITY: Record<
 
 export function ReviewQueue({ items }: { items: ReviewItem[] }) {
   const [resolved, setResolved] = useState<Record<string, "accepted" | "dismissed">>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
 
   const open = items.filter((i) => !resolved[i.id]);
+
+  const resolve = (
+    id: string,
+    run: (id: string) => Promise<{ ok: boolean; error?: string }>,
+    outcome: "accepted" | "dismissed",
+  ) => {
+    setBusyId(id);
+    setErrors((e) => ({ ...e, [id]: "" }));
+    startTransition(async () => {
+      const r = await run(id);
+      setBusyId(null);
+      if (r.ok) {
+        setResolved((s) => ({ ...s, [id]: outcome }));
+      } else {
+        setErrors((e) => ({ ...e, [id]: r.error ?? "Something went wrong." }));
+      }
+    });
+  };
 
   return (
     <div>
@@ -144,23 +169,37 @@ export function ReviewQueue({ items }: { items: ReviewItem[] }) {
                 <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-2.5">
                   <button
                     onClick={() =>
-                      setResolved((r) => ({ ...r, [item.id]: "accepted" }))
+                      resolve(item.id, acceptReviewAction, "accepted")
                     }
-                    className="inline-flex h-8 items-center gap-1.5 rounded bg-accent px-3 text-xs font-medium text-white hover:bg-accent-ink"
+                    disabled={busyId === item.id}
+                    className="inline-flex h-8 items-center gap-1.5 rounded bg-accent px-3 text-xs font-medium text-white hover:bg-accent-ink disabled:opacity-60"
                   >
-                    <Check className="h-3.5 w-3.5" /> Accept all
+                    {busyId === item.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Check className="h-3.5 w-3.5" />
+                    )}
+                    {item.tripId ? "Accept all" : "Accept — create trip"}
                   </button>
-                  <button className="inline-flex h-8 items-center gap-1.5 rounded border border-line-strong bg-canvas px-3 text-xs font-medium text-ink-soft hover:bg-panel-2">
-                    <Link2 className="h-3.5 w-3.5" /> Link to trip
-                  </button>
-                  <button className="inline-flex h-8 items-center gap-1.5 rounded border border-line-strong bg-canvas px-3 text-xs font-medium text-ink-soft hover:bg-panel-2">
-                    <RotateCw className="h-3.5 w-3.5" /> Reprocess
-                  </button>
+                  {item.tripId && (
+                    <Link
+                      href={`/trips/${item.tripId}`}
+                      className="inline-flex h-8 items-center gap-1.5 rounded border border-line-strong bg-canvas px-3 text-xs font-medium text-ink-soft hover:bg-panel-2"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" /> Open trip
+                    </Link>
+                  )}
+                  {errors[item.id] && (
+                    <span className="inline-flex items-center gap-1 text-xs text-[var(--st-red)]">
+                      <AlertCircle className="h-3.5 w-3.5" /> {errors[item.id]}
+                    </span>
+                  )}
                   <button
                     onClick={() =>
-                      setResolved((r) => ({ ...r, [item.id]: "dismissed" }))
+                      resolve(item.id, dismissReviewAction, "dismissed")
                     }
-                    className="ml-auto inline-flex h-8 items-center gap-1.5 rounded px-3 text-xs font-medium text-muted hover:bg-panel-2 hover:text-ink"
+                    disabled={busyId === item.id}
+                    className="ml-auto inline-flex h-8 items-center gap-1.5 rounded px-3 text-xs font-medium text-muted hover:bg-panel-2 hover:text-ink disabled:opacity-60"
                   >
                     <X className="h-3.5 w-3.5" /> Dismiss
                   </button>

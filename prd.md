@@ -2,11 +2,57 @@
 
 **Working name:** LINE Trip Intelligence  
 **Product owner:** GEOID (Thailand) Co., Ltd.  
-**Document status:** Draft for development  
-**Version:** 1.0  
-**Date:** 19 July 2026  
+**Document status:** Implemented — pilot-ready; living document  
+**Version:** 1.1  
+**Date:** 19 July 2026 (last reconciled with the build: 20 July 2026)  
 **Primary deployment:** Vercel via GitHub  
 **Primary database:** Supabase PostgreSQL
+
+---
+
+## Implementation status (as of 20 July 2026)
+
+This PRD is the original spec. The application has since been built and wired to
+live data; this banner records what is real and where the implementation
+deliberately diverges from the spec. Section-level notes below the banner defer to
+this summary where they conflict.
+
+**Built and working end to end:**
+
+- **Ingestion (§10.1–10.2):** LINE webhook with HMAC-SHA256 signature verification,
+  idempotent message/attachment storage, attachment retrieval into a private
+  Supabase Storage bucket. Attachments are viewable in the inbox via short-lived,
+  org-scoped signed URLs (opened in a new tab).
+- **AI + trip engine (§10.3–10.8, §16):** versioned Zod extraction contract, an
+  OpenRouter extractor, deterministic normalizers/matcher/status-engine, trip
+  create/update, conversation + trip summaries, and a working review queue with
+  Accept (applies the extraction) and Dismiss.
+- **Operations UI (§11):** dashboard, trips table, trip detail + journey rail,
+  message inbox, and review queue all read live Supabase data through `lib/data/*`.
+- **Auth & tenancy (§6, §13):** Supabase Auth with **Google OAuth + email magic
+  link**, allowlist-gated profile provisioning, and org-scoped RLS.
+- **Data model (§12):** all tables from §12 exist (migrations `0001`–`0011`).
+- **Tests (§19.1):** 36 Vitest unit tests (confidence, normalizers, status-engine,
+  webhook signature, matcher).
+
+**Deliberate divergences from the spec:**
+
+- **AI is manually triggered, not automatic.** Extraction runs only on an explicit
+  action — **Run AI** (per message), **Re-summarise** (per trip), **Accept/Dismiss**
+  (review queue). A pg_cron/pg_net scheduler exists (migration `0011`) but is left
+  **UNSCHEDULED** by choice.
+- **AI provider is OpenRouter with `moonshotai/kimi-k3`**, not OpenAI. The
+  `TripExtractor` provider abstraction (§16.4) is honored by `OpenRouterExtractor`.
+- **Matcher composite rule tightened (§10.5):** the composite (date + destination)
+  fallback runs **only when the message has no usable shipment code**. A clear code
+  that matches no existing trip creates its own trip instead of probable-matching a
+  differently-coded one.
+- **UI libraries:** hand-built components in `components/ui/*` — **no shadcn/ui and
+  no TanStack Table** (§7). Supabase **Realtime** and **Playwright** are not yet used.
+
+**Not yet done:** review actions Link-to-trip / Reprocess (display only), Settings
+depth, and Phase 4 hardening (RLS/load tests, monitoring/alerts, AI regression set,
+retention config, pilot).
 
 ---
 
@@ -116,24 +162,26 @@ Every operational table must include `organization_id`. Supabase Row Level Secur
 
 ## 7. Recommended technology stack
 
-| Layer | Technology |
-|---|---|
-| Web framework | Next.js App Router with TypeScript |
-| UI | Tailwind CSS and shadcn/ui |
-| Data table | TanStack Table |
-| Forms and validation | React Hook Form and Zod |
-| Server state | Server Components where practical; TanStack Query only for interactive client data |
-| Database | Supabase PostgreSQL |
-| Authentication | Supabase Auth |
-| Authorization | Supabase RLS plus application role checks |
-| Attachments | Private Supabase Storage buckets |
-| Realtime | Supabase Realtime for trip and review updates |
-| LINE integration | LINE Messaging API webhook and content endpoints |
-| AI | Provider adapter with OpenAI Structured Outputs as the initial implementation |
-| Hosting | Vercel |
-| Source control and CI | GitHub and GitHub Actions |
-| Testing | Vitest, React Testing Library, and Playwright |
-| Monitoring | Structured application logs, Vercel logs, Supabase logs, and optional Sentry |
+The "Actual" column records what shipped; blank means the recommendation was kept.
+
+| Layer | Recommended | Actual |
+|---|---|---|
+| Web framework | Next.js App Router with TypeScript | Next.js 15.5.x, React 19 |
+| UI | Tailwind CSS and shadcn/ui | Tailwind v3.4 + **hand-built `components/ui/*`** (no shadcn) |
+| Data table | TanStack Table | **Custom table** in `components/trips/*` (no TanStack) |
+| Forms and validation | React Hook Form and Zod | Zod (forms are minimal so far) |
+| Server state | Server Components + TanStack Query for client data | **Server Components + Server Actions** (no TanStack Query) |
+| Database | Supabase PostgreSQL | ✓ |
+| Authentication | Supabase Auth | ✓ — **Google OAuth + email magic link**, allowlist-gated |
+| Authorization | Supabase RLS plus application role checks | ✓ |
+| Attachments | Private Supabase Storage buckets | ✓ — bucket `attachments`; viewed via signed URLs |
+| Realtime | Supabase Realtime for trip and review updates | **Not yet** (pages are `force-dynamic`; `revalidatePath` after actions) |
+| LINE integration | LINE Messaging API webhook and content endpoints | ✓ |
+| AI | Provider adapter with OpenAI Structured Outputs | **OpenRouter `moonshotai/kimi-k3`** via the `TripExtractor` adapter |
+| Hosting | Vercel | ✓ (Hobby; 60s function cap) |
+| Source control and CI | GitHub and GitHub Actions | GitHub ✓; Actions **not yet** |
+| Testing | Vitest, React Testing Library, and Playwright | **Vitest** ✓; RTL/Playwright **not yet** |
+| Monitoring | App/Vercel/Supabase logs, optional Sentry | Platform logs; Sentry **not yet** |
 
 ### 7.1 Architecture decision
 
@@ -922,6 +970,12 @@ interface TripExtractor {
 
 The database and UI must not depend on provider-specific response objects.
 
+> **Implemented:** `OpenRouterExtractor` (`lib/ai/extractor.ts`) implements this
+> interface against OpenRouter, model `moonshotai/kimi-k3` (env `AI_MODEL`), prompt
+> v1.1 (few-shot Thai) / schema v1.0. `processMessageById` also accepts an
+> `extractionOverride`, which replays a stored extraction through the same
+> deterministic apply path with no new AI call (used for reprocessing/repair).
+
 ---
 
 ## 17. Sample expected behavior
@@ -1046,7 +1100,9 @@ The supplied conversation should be converted into a sanitized regression fixtur
 
 ## 20. Development milestones
 
-### Phase 0 — Foundation
+Status as of 20 July 2026: **Phases 0–3 substantially complete; Phase 4 pending.**
+
+### Phase 0 — Foundation ✅ (done)
 
 - Create GitHub repository.
 - Create Next.js TypeScript application.
@@ -1054,7 +1110,7 @@ The supplied conversation should be converted into a sanitized regression fixtur
 - Create Supabase projects for local/development and production.
 - Configure Vercel preview and production environments.
 
-### Phase 1 — Secure ingestion
+### Phase 1 — Secure ingestion ✅ (done)
 
 - Database migrations for organizations, groups, events, messages, and attachments.
 - LINE webhook signature verification.
@@ -1063,7 +1119,7 @@ The supplied conversation should be converted into a sanitized regression fixtur
 - Attachment retrieval and private storage.
 - Basic message inbox.
 
-### Phase 2 — AI extraction and trip engine
+### Phase 2 — AI extraction and trip engine ✅ (done; AI fires manually, not auto)
 
 - Versioned extraction schema and prompts.
 - Classification and extraction worker.
@@ -1072,16 +1128,16 @@ The supplied conversation should be converted into a sanitized regression fixtur
 - Trip, vehicle, driver, container, and event migrations.
 - Review-item generation.
 
-### Phase 3 — Operations UI
+### Phase 3 — Operations UI ✅ (mostly done)
 
 - Dashboard.
 - Trip table.
 - Trip detail/timeline.
-- Review queue.
-- Manual edits and audit log.
+- Review queue (Accept/Dismiss persist; Link-to-trip and Reprocess are still display-only).
+- Manual edits and audit log (audit writes on apply/accept; inline manual edit UI pending).
 - CSV export.
 
-### Phase 4 — Hardening and pilot
+### Phase 4 — Hardening and pilot ⏳ (pending)
 
 - RLS/security tests.
 - Load and retry tests.
@@ -1157,10 +1213,12 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 LINE_CHANNEL_SECRET=
 LINE_CHANNEL_ACCESS_TOKEN=
-OPENAI_API_KEY=
-AI_MODEL=
+OPENROUTER_API_KEY=
+AI_MODEL=                 # e.g. moonshotai/kimi-k3
+OPENROUTER_APP_URL=       # optional (HTTP-Referer for OpenRouter)
+OPENROUTER_APP_TITLE=     # optional (X-Title for OpenRouter)
 INTERNAL_JOB_SECRET=
-SENTRY_DSN=
+SENTRY_DSN=               # optional; not yet wired
 ```
 
 Validate environment variables at application startup with a server/client-aware schema.
@@ -1216,8 +1274,8 @@ the exact results plus any remaining manual setup.
 | Cross-group shipment matching | Disabled initially |
 | Automatic safe-change threshold | 0.90 |
 | Retention period | To be approved before pilot |
-| Queue/workflow provider | Select during Phase 1 spike |
-| AI provider/model | OpenAI adapter; exact model configured by environment |
+| Queue/workflow provider | pg_cron + pg_net present (migration 0011) but **unscheduled**; processing is manually triggered |
+| AI provider/model | **OpenRouter** adapter; `moonshotai/kimi-k3` (env `AI_MODEL`) |
 | LINE group-member consent method | To be defined with customer privacy notice |
 | Pilot scope | One operational LINE group |
 

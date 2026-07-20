@@ -98,6 +98,13 @@ export interface Trip {
   linkedMessageIds: string[];
 }
 
+export interface MessageAttachment {
+  id: string;
+  filename: string;
+  mimeType: string | null;
+  kind: "image" | "file";
+}
+
 export interface LineMessage {
   id: string;
   lineMessageId: string;
@@ -117,6 +124,8 @@ export interface LineMessage {
   classification: Classification | null;
   linkedTripId: string | null;
   attachmentName: string | null;
+  /** Stored attachments viewable via a signed URL (empty until retrieved). */
+  attachments?: MessageAttachment[];
 }
 
 export interface ReviewItem {

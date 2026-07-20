@@ -37,7 +37,9 @@ const NONE: MatchResult = {
 /**
  * Find the trip an extraction belongs to, in PRD §10.5 priority order.
  * Cross-group matching (priority 2) is disabled initially. Strong composite
- * matches are treated as probable and routed to review rather than auto-applied.
+ * matches are treated as probable and routed to review rather than auto-applied,
+ * and are only attempted when the message has no usable shipment code — a clear
+ * code that matched nothing is a new shipment, not a probable match.
  */
 export async function findMatchingTrip(
   admin: Admin,
@@ -76,7 +78,12 @@ export async function findMatchingTrip(
   }
 
   // 4/5) Probable composite: assignment date + destination. Route to review.
-  if (extraction.assignmentDate && extraction.destinationName) {
+  // Only attempt this when the message carries NO usable shipment code. A present,
+  // normalized code that matched no trip above is a genuinely new/distinct shipment
+  // (e.g. VJF6.36 vs an existing VJF6.37 — different driver/truck to the same place
+  // on the same day). Let it create its own trip instead of probable-matching a
+  // differently-coded one.
+  if (!code && extraction.assignmentDate && extraction.destinationName) {
     const { data } = await admin
       .from("trips")
       .select("id")

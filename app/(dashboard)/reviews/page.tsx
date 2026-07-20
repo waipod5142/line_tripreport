@@ -1,9 +1,11 @@
 import { PageHeader } from "@/components/ui/page-header";
 import { ReviewQueue } from "@/components/reviews/review-queue";
-import { getReviewItems } from "@/lib/mock/data";
+import { listReviewItems } from "@/lib/data/reviews";
 
-export default function ReviewsPage() {
-  const items = getReviewItems();
+export const dynamic = "force-dynamic";
+
+export default async function ReviewsPage() {
+  const items = await listReviewItems();
   return (
     <>
       <PageHeader

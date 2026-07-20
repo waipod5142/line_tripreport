@@ -14,8 +14,11 @@ import {
   Sparkles,
   Sticker,
 } from "lucide-react";
-import { processMessageAction } from "@/app/(dashboard)/messages/actions";
-import type { Classification, LineMessage } from "@/lib/types";
+import {
+  processMessageAction,
+  getAttachmentUrlAction,
+} from "@/app/(dashboard)/messages/actions";
+import type { Classification, LineMessage, MessageAttachment } from "@/lib/types";
 import { cn, formatDateTime } from "@/lib/utils";
 
 const TYPE_ICON = {
@@ -143,10 +146,19 @@ export function MessageInbox({ messages }: { messages: LineMessage[] }) {
                   {m.text && (
                     <p className="mt-1 font-thai text-sm text-ink-soft">{m.text}</p>
                   )}
-                  {m.attachmentName && (
-                    <div className="mt-1 inline-flex items-center gap-1.5 rounded border border-line bg-panel px-2 py-1 font-mono text-2xs text-muted">
-                      <ImageIcon className="h-3 w-3" /> {m.attachmentName}
+                  {m.attachments && m.attachments.length > 0 ? (
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {m.attachments.map((a) => (
+                        <AttachmentChip key={a.id} att={a} />
+                      ))}
                     </div>
+                  ) : (
+                    m.attachmentName && (
+                      <div className="mt-1 inline-flex items-center gap-1.5 rounded border border-line bg-panel px-2 py-1 font-mono text-2xs text-faint">
+                        <ImageIcon className="h-3 w-3" /> {m.attachmentName}
+                        <span className="text-faint">· retrieving…</span>
+                      </div>
+                    )
                   )}
 
                   <div className="mt-1.5 flex flex-wrap items-center gap-2">
@@ -182,6 +194,52 @@ export function MessageInbox({ messages }: { messages: LineMessage[] }) {
         )}
       </div>
     </div>
+  );
+}
+
+// A stored image/PDF attachment. Clicking mints a short-lived signed URL and
+// opens it in a new tab. The blank tab is opened synchronously inside the click
+// gesture (then redirected) so pop-up blockers don't swallow it.
+function AttachmentChip({ att }: { att: MessageAttachment }) {
+  const [pending, startTransition] = useTransition();
+  const [failed, setFailed] = useState(false);
+  const Icon = att.kind === "image" ? ImageIcon : FileText;
+
+  const open = () => {
+    setFailed(false);
+    const tab = window.open("", "_blank");
+    startTransition(async () => {
+      const r = await getAttachmentUrlAction(att.id);
+      if (r.ok && r.url) {
+        if (tab) tab.location.href = r.url;
+        else window.open(r.url, "_blank");
+      } else {
+        tab?.close();
+        setFailed(true);
+      }
+    });
+  };
+
+  return (
+    <button
+      onClick={open}
+      disabled={pending}
+      title={att.filename}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded border px-2 py-1 font-mono text-2xs transition-colors disabled:opacity-60",
+        failed
+          ? "border-[var(--st-red)] text-[var(--st-red)]"
+          : "border-line bg-panel text-muted hover:border-line-strong hover:text-ink",
+      )}
+    >
+      {pending ? (
+        <Loader2 className="h-3 w-3 animate-spin" />
+      ) : (
+        <Icon className="h-3 w-3" />
+      )}
+      <span className="max-w-[220px] truncate">{att.filename}</span>
+      {failed && <span>· failed</span>}
+    </button>
   );
 }
 

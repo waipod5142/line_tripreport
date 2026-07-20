@@ -15,7 +15,12 @@ type Row = {
   classification: string | null;
   line_groups: { group_name: string | null } | null;
   line_members: { display_name: string | null } | null;
-  message_attachments: { original_filename: string | null }[];
+  message_attachments: {
+    id: string;
+    original_filename: string | null;
+    mime_type: string | null;
+    retrieval_status: string;
+  }[];
   message_trip_links: { trip_id: string }[];
 };
 
@@ -27,7 +32,7 @@ export async function listMessages(limit = 100): Promise<LineMessage[]> {
       `id, line_message_id, message_type, text_content, sent_at, processing_status, classification,
        line_groups ( group_name ),
        line_members ( display_name ),
-       message_attachments ( original_filename ),
+       message_attachments ( id, original_filename, mime_type, retrieval_status ),
        message_trip_links ( trip_id )`,
     )
     .order("sent_at", { ascending: false })
@@ -44,6 +49,16 @@ function mapRow(r: Row): LineMessage {
     ? (r.message_type as LineMessage["messageType"])
     : "file"; // video/audio/etc. fall back to the file icon
 
+  // Only stored attachments are viewable (a signed URL can be minted for them).
+  const attachments = (r.message_attachments ?? [])
+    .filter((a) => a.retrieval_status === "stored")
+    .map((a) => ({
+      id: a.id,
+      filename: a.original_filename ?? a.id,
+      mimeType: a.mime_type,
+      kind: (a.mime_type ?? "").startsWith("image/") ? ("image" as const) : ("file" as const),
+    }));
+
   return {
     id: r.id,
     lineMessageId: r.line_message_id ?? r.id,
@@ -55,6 +70,10 @@ function mapRow(r: Row): LineMessage {
     processingStatus: r.processing_status as LineMessage["processingStatus"],
     classification: (r.classification as LineMessage["classification"]) ?? null,
     linkedTripId: r.message_trip_links?.[0]?.trip_id ?? null,
-    attachmentName: r.message_attachments?.[0]?.original_filename ?? null,
+    attachmentName:
+      attachments[0]?.filename ??
+      r.message_attachments?.[0]?.original_filename ??
+      null,
+    attachments,
   };
 }
