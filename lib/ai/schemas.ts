@@ -4,7 +4,7 @@ import { z } from "zod";
 // that validates against this schema. It never produces SQL or DB identifiers.
 
 export const SCHEMA_VERSION = "1.0";
-export const PROMPT_VERSION = "1.0";
+export const PROMPT_VERSION = "1.1";
 
 export const ClassificationEnum = z.enum([
   "trip_assignment",

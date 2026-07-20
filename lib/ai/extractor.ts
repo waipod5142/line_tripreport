@@ -6,7 +6,7 @@ import {
   TripExtractionSchema,
   type TripExtraction,
 } from "./schemas";
-import { buildSystemPrompt, buildUserPrompt } from "./prompts/extraction";
+import { FEW_SHOT, buildSystemPrompt, buildUserPrompt } from "./prompts/extraction";
 
 // Provider abstraction (PRD §16.4). Trip logic depends only on this interface,
 // never on a provider-specific response object. The initial implementation
@@ -71,6 +71,7 @@ export class OpenRouterExtractor implements TripExtractor {
             role: "system",
             content: buildSystemPrompt(input.locale, input.timezone),
           },
+          ...FEW_SHOT,
           { role: "user", content: buildUserPrompt(input) },
         ],
       }),
