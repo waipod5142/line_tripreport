@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import {
   Check,
+  Download,
   FileText,
   ImageIcon,
   Link2,
@@ -69,6 +70,48 @@ export function MessageInbox({ messages }: { messages: LineMessage[] }) {
     });
   }, [messages, query, type, status]);
 
+  // Export the currently filtered view as CSV (Excel-friendly UTF-8 with BOM).
+  const exportCsv = () => {
+    const headers = [
+      "Sent at (Asia/Bangkok)",
+      "Sender",
+      "Group",
+      "Type",
+      "Status",
+      "Classification",
+      "Text",
+      "Attachments",
+      "Linked trip",
+    ];
+    const escape = (v: string | null) =>
+      `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const rows = filtered.map((m) =>
+      [
+        formatDateTime(m.sentAt),
+        m.senderName,
+        m.group,
+        m.messageType,
+        m.processingStatus,
+        m.classification ?? "",
+        (m.text ?? "").replace(/\s+/g, " ").trim(),
+        m.attachments && m.attachments.length > 0
+          ? m.attachments.map((a) => a.filename).join(" | ")
+          : m.attachmentName ?? "",
+        m.linkedTripId ?? "",
+      ]
+        .map(escape)
+        .join(","),
+    );
+    const csv = [headers.map(escape).join(","), ...rows].join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `messages-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div>
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -103,6 +146,14 @@ export function MessageInbox({ messages }: { messages: LineMessage[] }) {
           <option value="queued">Queued</option>
           <option value="failed">Failed</option>
         </select>
+        <button
+          onClick={exportCsv}
+          disabled={filtered.length === 0}
+          className="inline-flex h-9 items-center justify-center gap-1.5 rounded border border-line-strong bg-canvas px-3 text-sm font-medium text-ink-soft hover:bg-panel-2 hover:text-ink disabled:opacity-50"
+        >
+          <Download className="h-4 w-4" />
+          CSV
+        </button>
       </div>
 
       <div className="mb-2 text-xs text-muted">
