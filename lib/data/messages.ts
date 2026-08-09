@@ -1,11 +1,9 @@
 import "server-only";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import type { LineMessage } from "@/lib/types";
 
-// Live read of captured LINE messages. The /messages inbox is intentionally
-// public (no login), so this uses the service-role client and returns every
-// captured message across the workspace, bypassing RLS by design. Sole caller:
-// app/messages/page.tsx. Server-only — never reaches the browser.
+// Live read of captured LINE messages. Uses the RLS server client, so results
+// are automatically scoped to the signed-in user's organization.
 
 type Row = {
   id: string;
@@ -27,7 +25,7 @@ type Row = {
 };
 
 export async function listMessages(limit = 100): Promise<LineMessage[]> {
-  const supabase = createAdminClient();
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("line_messages")
     .select(
