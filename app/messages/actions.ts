@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/data/session";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NonRetriableError, processMessageById } from "@/lib/ai/process";
 
@@ -17,8 +16,10 @@ export interface ProcessActionResult {
 
 /**
  * Manually run the AI worker on one message (create/update its trip + summary).
- * Authorized to writer roles. Runs synchronously — the caller sees a pending
- * state while kimi-k3 works (~50s).
+ * The inbox is viewable publicly, but this triggers kimi-k3 (~50s, costs
+ * credits) and writes trips — so it stays gated to signed-in writer roles.
+ * Anonymous visitors can read the page but cannot fire the AI worker.
+ * Synchronous — the caller sees a pending state while the model works.
  */
 export async function processMessageAction(
   messageId: string,
@@ -63,17 +64,14 @@ export interface AttachmentUrlResult {
 }
 
 /**
- * Mint a short-lived signed URL for viewing a stored attachment. Any org member
- * may view — the RLS client scopes both the lookup and the storage signing to
- * the caller's organization, so no service-role key is involved.
+ * Mint a short-lived signed URL for viewing a stored attachment. The /messages
+ * page is public (auth removed), so this uses the service-role client to look
+ * up and sign the attachment without a session.
  */
 export async function getAttachmentUrlAction(
   attachmentId: string,
 ): Promise<AttachmentUrlResult> {
-  const user = await getCurrentUser();
-  if (!user?.profile) return { ok: false, error: "Not authorized." };
-
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data } = await supabase
     .from("message_attachments")
     .select("storage_bucket, storage_path, retrieval_status")

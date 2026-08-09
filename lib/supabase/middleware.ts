@@ -4,7 +4,9 @@ import type { Database } from "./types";
 
 // Paths reachable without a session. /api is also excluded by the matcher, but
 // listed here as defense-in-depth (webhook/worker authenticate themselves).
-const PUBLIC_PREFIXES = ["/login", "/auth", "/api"];
+// /messages is intentionally public: it renders outside the auth-gated dashboard
+// layout and reads via the service-role client (see app/messages/*).
+const PUBLIC_PREFIXES = ["/login", "/auth", "/api", "/messages"];
 
 /**
  * Refreshes the Supabase auth session and gates access: unauthenticated users

@@ -18,7 +18,7 @@ import {
 import {
   processMessageAction,
   getAttachmentUrlAction,
-} from "@/app/(dashboard)/messages/actions";
+} from "@/app/messages/actions";
 import type { Classification, LineMessage, MessageAttachment } from "@/lib/types";
 import { cn, formatDateTime } from "@/lib/utils";
 
