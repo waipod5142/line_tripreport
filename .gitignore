@@ -47,3 +47,6 @@ yarn-error.log*
 .mcp.json
 skills-lock.json
 .env*
+
+# Pre-drop data archives — contain operational PII (driver names, phones)
+supabase/archive/
