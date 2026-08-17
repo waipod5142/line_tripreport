@@ -10,6 +10,19 @@
 
 ---
 
+> ## ⚠️ SUPERSEDED (17 Aug 2026)
+>
+> The trip-intelligence product described below — trips, the deterministic trip
+> engine, the review queue, the operations dashboard and the AI extraction
+> pipeline — **was removed from the application at the owner's request.** What
+> ships today is message capture only: per-group LINE message archive, filtering
+> and CSV export.
+>
+> This document is kept as the historical spec and as the record of how ingestion,
+> tenancy and RLS were designed (§9–§10 remain accurate). Everything about trips,
+> matching, confidence and AI is no longer implemented. See `CLAUDE.md` for what
+> the code actually does.
+
 ## Implementation status (as of 20 July 2026)
 
 This PRD is the original spec. The application has since been built and wired to

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/ui/page-header";
 import { MessageInbox } from "@/components/messages/message-inbox";
 import { listMessagesPage } from "@/lib/data/messages";
+import { listInboxGroups } from "@/lib/data/groups";
 import {
   filtersToQuery,
   hasActiveFilters,
@@ -12,8 +13,6 @@ import {
 
 // Always read fresh from Supabase (new messages arrive continuously).
 export const dynamic = "force-dynamic";
-// The manual "Run AI" server action calls kimi-k3 (~50s), so allow the max.
-export const maxDuration = 60;
 
 export default async function MessagesPage({
   searchParams,
@@ -24,7 +23,10 @@ export default async function MessagesPage({
   const filters = parseMessageFilters(params);
   const page = parsePage(params);
 
-  const { rows, total, pageCount } = await listMessagesPage(filters, page);
+  const [{ rows, total, pageCount }, groups] = await Promise.all([
+    listMessagesPage(filters, page),
+    listInboxGroups(),
+  ]);
 
   // Narrowing the filters can strand the reader past the last page.
   if (page > pageCount && total > 0) {
@@ -39,18 +41,24 @@ export default async function MessagesPage({
       <PageHeader
         eyebrow="Evidence"
         title="Message inbox"
-        description="Every captured LINE message, preserved with its source metadata. Non-operational messages stay searchable but never create trips."
+        description="Every captured LINE message, preserved with its source metadata. Filter to a group and export exactly what you are looking at."
       />
       {total === 0 && unfiltered ? (
         <div className="rounded-md border border-line bg-panel px-4 py-16 text-center">
           <p className="text-sm font-medium text-ink">No messages captured yet</p>
           <p className="mt-1 text-xs text-muted">
             Post a message in an active LINE group — it appears here within seconds.
+            New groups need activating under{" "}
+            <a href="/settings" className="text-accent hover:text-accent-ink">
+              Settings
+            </a>
+            .
           </p>
         </div>
       ) : (
         <MessageInbox
           messages={rows}
+          groups={groups}
           filters={filters}
           total={total}
           page={page}

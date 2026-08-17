@@ -1,77 +1,78 @@
-# LINE Trip Intelligence
+# LINE Message Archive
 
-Turn informal LINE transport conversations into a traceable, searchable trip
-database. See [`prd.md`](./prd.md) for the full product spec.
+Capture messages from LINE transport group chats into a searchable, per-group
+record you can export to CSV.
 
-**Owner:** GEOID (Thailand) Co., Ltd. · **Timezone:** Asia/Bangkok · **Status:** MVP scaffold
+**Owner:** GEOID (Thailand) Co., Ltd. · **Timezone:** Asia/Bangkok
+
+> This project began as "LINE Trip Intelligence" — an AI pipeline that turned chat
+> messages into structured trip records. That product was **removed on 17 Aug 2026**.
+> [`prd.md`](./prd.md) is retained as the historical spec; it is no longer what the
+> code does. See [`CLAUDE.md`](./CLAUDE.md) for the current architecture.
 
 ---
 
-## What's in this repo right now
+## What it does
 
-This is the **UI-first scaffold** — the operations interface built with realistic
-mock data so the look and flow can be reviewed before backend wiring. It ships with
-a clean, white "dispatch console" design system.
+```
+LINE group chat → webhook (signature-verified, idempotent) → Postgres + private
+attachment storage → per-group inbox → CSV export
+```
 
 Screens:
 
 | Route | Screen |
 |---|---|
-| `/login` | Sign in (split brand + form) |
-| `/dashboard` | Stat readouts, active trips, needs-attention, recent updates |
-| `/trips` | Filterable / sortable trip table + CSV export (card mode on mobile) |
-| `/trips/[id]` | Trip detail: journey rail, event timeline, details, summary, messages, attachments |
-| `/reviews` | Review queue with side-by-side source vs. proposed values |
-| `/messages` | Raw message inbox with classification + processing status |
-| `/settings` | Org, groups, thresholds, AI provider, retention, aliases, users |
+| `/login` | Sign in — Google OAuth or email magic link, allowlist-gated |
+| `/messages` | Message inbox: search, filter by group / type / status, CSV export |
+| `/settings` | Approve or pause the LINE groups this workspace captures |
 
-Mock data lives in [`lib/mock/data.ts`](./lib/mock/data.ts) and includes the PRD's
-`TPL6.5` regression sample. Swap that module for Supabase queries later — the UI
-reads only through its accessor functions.
+## Adding a LINE group
+
+Groups are allowlisted — the bot does not capture a chat just because it was added
+to it.
+
+1. Invite the LINE official account to the group chat.
+2. It registers itself under **Settings → LINE groups** as `pending` within seconds.
+3. Press **Approve**. Messages start landing in the inbox immediately, and the group
+   becomes selectable in the inbox filter and the export.
+
+Messages sent while a group is still `pending` are **discarded** — the raw webhook
+event is retained in `webhook_events`, but no message row is created. Approve a
+group before you need its history.
+
+## Export
+
+The CSV is defined as *everything matching the filters currently in the URL*, not
+what the page happened to load — so filter to a group, then export, and you get that
+group's full history streamed straight to disk. Files are named for the group and
+dated in Bangkok time: `messages-hi-tech-logistics-2026-08-17.csv`.
 
 ## Design system
 
 - **Palette:** white canvas, hairline borders, one customs-ink green accent
   (`#0F5C4B`). Status hues kept low-chroma. Tokens in `app/globals.css`.
-- **Type:** IBM Plex Sans (headings), Plex Sans Thai (body — Thai driver names),
-  Plex Mono (every operational identifier: shipment codes, containers, plates).
-- **Signature:** the **journey rail** — the trip lifecycle rendered as an honest
-  sequence (`components/trips/journey-rail.tsx`).
+- **Type:** IBM Plex Sans (headings), Plex Sans Thai (body — Thai sender names),
+  Plex Mono (every operational identifier: group ids, timestamps, filenames).
 
 ## Stack
 
-Next.js App Router · TypeScript · Tailwind CSS · Zod · Supabase (planned) ·
-AI extraction via **OpenRouter** (`moonshotai/kimi-k3`, configurable).
+Next.js App Router · TypeScript · React 19 · Tailwind CSS · Zod ·
+Supabase (Postgres + RLS, Auth, private Storage) · Vercel
 
 ## Getting started
 
 ```bash
 npm install
-cp .env.example .env.local   # fill in values as you wire up backends
+cp .env.example .env.local   # fill in Supabase + LINE credentials
 npm run dev                  # http://localhost:3000
 ```
 
 Validation:
 
 ```bash
+npm test        # vitest
 npm run typecheck
 npm run lint
 npm run build
 ```
-
-## AI provider
-
-Extraction goes through a provider abstraction (`lib/ai/extractor.ts`) so trip
-logic never depends on a specific vendor. The initial implementation targets
-OpenRouter; set the model with `AI_MODEL` (default `moonshotai/kimi-k3`). All AI
-output is validated against a versioned Zod schema (`lib/ai/schemas.ts`) before any
-application logic runs.
-
-## Roadmap (from the PRD)
-
-- **Phase 1** — LINE webhook ingestion, signature verification, Supabase schema +
-  RLS, private attachment storage, idempotent event/message storage.
-- **Phase 2** — AI extraction worker, normalizers, trip matcher/dedup, review-item
-  generation.
-- **Phase 3** — wire these screens to live data.
-- **Phase 4** — RLS/security tests, AI regression set, pilot with one LINE group.

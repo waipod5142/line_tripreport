@@ -4,6 +4,7 @@ import {
   csvLine,
   escapeCsvValue,
   messageToCsvFields,
+  slugifyGroup,
 } from "@/lib/messages/csv";
 import {
   filtersToQuery,
@@ -16,14 +17,12 @@ import type { LineMessage } from "@/lib/types";
 const message = (over: Partial<LineMessage> = {}): LineMessage => ({
   id: "m1",
   lineMessageId: "line-1",
-  group: "GEOID • Laem Chabang",
+  group: "Hi Tech Logistics",
   senderName: "สมชาย",
   messageType: "text",
   text: "รถถึงด่านแล้ว",
   sentAt: "2026-08-15T03:16:45.779Z",
   processingStatus: "processed",
-  classification: "trip_update",
-  linkedTripId: "trip-9",
   attachmentName: null,
   attachments: [],
   ...over,
@@ -64,7 +63,7 @@ describe("messageToCsvFields", () => {
 
   it("collapses newlines in the message body onto one line", () => {
     const fields = messageToCsvFields(message({ text: "line one\n\nline  two" }));
-    expect(fields[6]).toBe("line one line two");
+    expect(fields[5]).toBe("line one line two");
   });
 
   it("joins multiple attachment filenames", () => {
@@ -76,27 +75,25 @@ describe("messageToCsvFields", () => {
         ],
       }),
     );
-    expect(fields[7]).toBe("cn1.jpg | do.pdf");
+    expect(fields[6]).toBe("cn1.jpg | do.pdf");
   });
 
   it("falls back to the pending attachment name when nothing is stored yet", () => {
     const fields = messageToCsvFields(
       message({ attachments: [], attachmentName: "retrieving.jpg" }),
     );
-    expect(fields[7]).toBe("retrieving.jpg");
+    expect(fields[6]).toBe("retrieving.jpg");
   });
 
-  it("blanks a missing classification and trip link", () => {
-    const fields = messageToCsvFields(
-      message({ classification: null, linkedTripId: null }),
-    );
+  it("blanks the text and attachment fields when there is nothing to say", () => {
+    const fields = messageToCsvFields(message({ text: null, attachments: [] }));
     expect(fields[5]).toBe("");
-    expect(fields[8]).toBe("");
+    expect(fields[6]).toBe("");
   });
 
   it("produces one CSV record per message", () => {
     expect(csvLine(messageToCsvFields(message()))).toBe(
-      '"15 Aug 2026, 10:16","สมชาย","GEOID • Laem Chabang","text","processed","trip_update","รถถึงด่านแล้ว","","trip-9"',
+      '"15 Aug 2026, 10:16","สมชาย","Hi Tech Logistics","text","processed","รถถึงด่านแล้ว",""',
     );
   });
 });
@@ -106,11 +103,46 @@ describe("csvFilename", () => {
     // 17:30 UTC on the 14th is already the 15th in Bangkok.
     expect(csvFilename(new Date("2026-08-14T17:30:00Z"))).toBe("messages-2026-08-15.csv");
   });
+
+  it("names the group when the export is scoped to one", () => {
+    expect(csvFilename(new Date("2026-08-15T04:00:00Z"), "DHL OSP x TSC (10W)")).toBe(
+      "messages-dhl-osp-x-tsc-10w-2026-08-15.csv",
+    );
+  });
+
+  it("falls back to the plain name for a group with no ASCII form", () => {
+    expect(csvFilename(new Date("2026-08-15T04:00:00Z"), "ขนส่งไทย")).toBe(
+      "messages-2026-08-15.csv",
+    );
+  });
 });
+
+describe("slugifyGroup", () => {
+  it("collapses punctuation and runs of separators into single hyphens", () => {
+    expect(slugifyGroup("DHL OSP x TSC (10W)")).toBe("dhl-osp-x-tsc-10w");
+    expect(slugifyGroup("Hi Tech Logistics")).toBe("hi-tech-logistics");
+  });
+
+  it("never leaves a leading or trailing hyphen, even after truncation", () => {
+    expect(slugifyGroup("  ...Laem Chabang...  ")).toBe("laem-chabang");
+    expect(slugifyGroup("x".repeat(58) + " tail")).not.toMatch(/-$/);
+  });
+
+  it("reduces a name with no ASCII characters to nothing", () => {
+    expect(slugifyGroup("ขนส่งไทย")).toBe("");
+  });
+});
+
+const GROUP_ID = "625660c8-8489-4b84-b540-748d767c9ab1";
 
 describe("parseMessageFilters", () => {
   it("defaults to no filtering", () => {
-    expect(parseMessageFilters({})).toEqual({ q: "", type: "all", status: "all" });
+    expect(parseMessageFilters({})).toEqual({
+      q: "",
+      type: "all",
+      status: "all",
+      group: "all",
+    });
   });
 
   it("keeps whitelisted type and status values", () => {
@@ -118,6 +150,7 @@ describe("parseMessageFilters", () => {
       q: "",
       type: "image",
       status: "failed",
+      group: "all",
     });
   });
 
@@ -126,7 +159,20 @@ describe("parseMessageFilters", () => {
       q: "",
       type: "all",
       status: "all",
+      group: "all",
     });
+  });
+
+  it("accepts a UUID-shaped group and normalises its case", () => {
+    expect(parseMessageFilters({ group: GROUP_ID }).group).toBe(GROUP_ID);
+    expect(parseMessageFilters({ group: GROUP_ID.toUpperCase() }).group).toBe(GROUP_ID);
+  });
+
+  it("rejects a group that isn't a UUID, so it can't reach the query builder", () => {
+    // Groups can't be whitelisted by value, so shape is the only gate here.
+    expect(parseMessageFilters({ group: "all" }).group).toBe("all");
+    expect(parseMessageFilters({ group: "1) or true--" }).group).toBe("all");
+    expect(parseMessageFilters({ group: GROUP_ID + "x" }).group).toBe("all");
   });
 
   it("trims and bounds the search term", () => {
@@ -151,12 +197,18 @@ describe("parsePage", () => {
 
 describe("filtersToQuery", () => {
   it("omits defaults so an unfiltered inbox has a clean URL", () => {
-    expect(filtersToQuery({ q: "", type: "all", status: "all" })).toBe("");
-    expect(filtersToQuery({ q: "", type: "all", status: "all" }, 1)).toBe("");
+    const empty = { q: "", type: "all", status: "all", group: "all" };
+    expect(filtersToQuery(empty)).toBe("");
+    expect(filtersToQuery(empty, 1)).toBe("");
   });
 
   it("round-trips through parseMessageFilters", () => {
-    const filters = { q: "TPL 6.5", type: "image", status: "failed" };
+    const filters = {
+      q: "TPL 6.5",
+      type: "image",
+      status: "failed",
+      group: GROUP_ID,
+    };
     const parsed = parseMessageFilters(
       Object.fromEntries(new URLSearchParams(filtersToQuery(filters, 3))),
     );

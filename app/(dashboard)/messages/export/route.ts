@@ -1,5 +1,6 @@
 import { getCurrentUser } from "@/lib/data/session";
 import { iterateMessages } from "@/lib/data/messages";
+import { listInboxGroups } from "@/lib/data/groups";
 import {
   CSV_BOM,
   CSV_HEADERS,
@@ -24,6 +25,14 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const filters = parseMessageFilters(Object.fromEntries(searchParams));
+
+  // Name the file after the group when the export is scoped to one. Resolved
+  // through RLS, so an id from another org just yields the undated default.
+  let groupName: string | null = null;
+  if (filters.group !== "all") {
+    const groups = await listInboxGroups();
+    groupName = groups.find((g) => g.id === filters.group)?.name ?? null;
+  }
 
   // Advance the generator once here, inside the request scope, so the Supabase
   // client is built while the cookie store is still available and any query
@@ -57,7 +66,7 @@ export async function GET(request: Request) {
   return new Response(stream, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${csvFilename(new Date())}"`,
+      "Content-Disposition": `attachment; filename="${csvFilename(new Date(), groupName)}"`,
       "Cache-Control": "no-store",
     },
   });

@@ -10,6 +10,8 @@ export interface MessageFilters {
   type: string;
   /** A processing_status value, or "all". */
   status: string;
+  /** A line_groups.id (UUID), or "all". */
+  group: string;
 }
 
 /** Types offered in the filter dropdown. Anything else is coerced to "all". */
@@ -26,7 +28,22 @@ export const FILTERABLE_STATUSES = [
   "failed",
 ] as const;
 
-export const EMPTY_FILTERS: MessageFilters = { q: "", type: "all", status: "all" };
+export const EMPTY_FILTERS: MessageFilters = {
+  q: "",
+  type: "all",
+  status: "all",
+  group: "all",
+};
+
+/**
+ * Groups are rows, not a fixed vocabulary, so the group filter can't be
+ * whitelisted the way type and status are — a new group must work the moment
+ * it's activated, with no code change. Instead the value is required to be
+ * UUID-shaped, which is enough to keep a hand-edited URL from reaching the
+ * PostgREST filter grammar; authorization is RLS's job, and a well-formed id
+ * belonging to another org simply matches no rows.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Rows per page in the inbox list. */
 export const PAGE_SIZE = 50;
@@ -45,10 +62,12 @@ function first(v: string | string[] | undefined): string {
 export function parseMessageFilters(params: RawParams): MessageFilters {
   const type = first(params.type);
   const status = first(params.status);
+  const group = first(params.group);
   return {
     q: first(params.q).trim().slice(0, 200),
     type: (FILTERABLE_TYPES as readonly string[]).includes(type) ? type : "all",
     status: (FILTERABLE_STATUSES as readonly string[]).includes(status) ? status : "all",
+    group: UUID_RE.test(group) ? group.toLowerCase() : "all",
   };
 }
 
@@ -65,6 +84,7 @@ export function parsePage(params: RawParams): number {
 export function filtersToQuery(filters: MessageFilters, page?: number): string {
   const params = new URLSearchParams();
   if (filters.q) params.set("q", filters.q);
+  if (filters.group !== "all") params.set("group", filters.group);
   if (filters.type !== "all") params.set("type", filters.type);
   if (filters.status !== "all") params.set("status", filters.status);
   if (page && page > 1) params.set("page", String(page));
@@ -72,7 +92,12 @@ export function filtersToQuery(filters: MessageFilters, page?: number): string {
 }
 
 export function hasActiveFilters(filters: MessageFilters): boolean {
-  return filters.q !== "" || filters.type !== "all" || filters.status !== "all";
+  return (
+    filters.q !== "" ||
+    filters.type !== "all" ||
+    filters.status !== "all" ||
+    filters.group !== "all"
+  );
 }
 
 /**

@@ -9,7 +9,7 @@ const PUBLIC_PREFIXES = ["/login", "/auth", "/api"];
 /**
  * Refreshes the Supabase auth session and gates access: unauthenticated users
  * are redirected to /login for any non-public route; signed-in users hitting
- * /login are sent to the dashboard.
+ * /login are sent to the message inbox.
  */
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -55,7 +55,7 @@ export async function updateSession(request: NextRequest) {
   }
   if (user && path === "/login") {
     const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
+    url.pathname = "/messages";
     return NextResponse.redirect(url);
   }
 

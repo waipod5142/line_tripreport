@@ -4,15 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
-  ClipboardCheck,
-  LayoutDashboard,
   LogOut,
   type LucideIcon,
   Menu,
   MessageSquare,
-  Search,
   Settings,
-  Truck,
   Waypoints,
   X,
 } from "lucide-react";
@@ -22,7 +18,6 @@ interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
-  badge?: number;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -34,11 +29,9 @@ const ROLE_LABELS: Record<string, string> = {
 
 export function Shell({
   children,
-  reviewCount,
   user,
 }: {
   children: React.ReactNode;
-  reviewCount: number;
   user: { name: string; email: string; role: string };
 }) {
   const initials = user.name
@@ -52,9 +45,6 @@ export function Shell({
   const [open, setOpen] = useState(false);
 
   const nav: NavItem[] = [
-    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/trips", label: "Trips", icon: Truck },
-    { href: "/reviews", label: "Review queue", icon: ClipboardCheck, badge: reviewCount },
     { href: "/messages", label: "Messages", icon: MessageSquare },
     { href: "/settings", label: "Settings", icon: Settings },
   ];
@@ -87,11 +77,6 @@ export function Shell({
               strokeWidth={active ? 2.25 : 2}
             />
             <span className="flex-1">{item.label}</span>
-            {item.badge ? (
-              <span className="rounded-full bg-accent px-1.5 text-2xs font-semibold text-white tabular">
-                {item.badge}
-              </span>
-            ) : null}
           </Link>
         );
       })}
@@ -180,19 +165,7 @@ export function Shell({
           >
             <Menu className="h-5 w-5" />
           </button>
-          <div className="relative hidden max-w-md flex-1 sm:block">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" />
-            <input
-              type="search"
-              placeholder="Search shipment, plate, container, driver…"
-              className="h-9 w-full rounded border border-line bg-panel pl-8 pr-3 text-sm text-ink placeholder:text-faint focus:border-line-strong focus:bg-canvas focus:outline-none"
-            />
-          </div>
           <div className="ml-auto flex items-center gap-2">
-            <span className="hidden items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-2xs text-muted sm:inline-flex">
-              <span className="h-1.5 w-1.5 rounded-full bg-[var(--st-green)]" />
-              AI worker healthy
-            </span>
             <span className="text-2xs text-faint">Asia/Bangkok</span>
           </div>
         </header>

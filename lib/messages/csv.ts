@@ -10,10 +10,8 @@ export const CSV_HEADERS = [
   "Group",
   "Type",
   "Status",
-  "Classification",
   "Text",
   "Attachments",
-  "Linked trip",
 ] as const;
 
 /** Excel reads a UTF-8 file as latin-1 without this byte-order mark. */
@@ -47,10 +45,8 @@ export function messageToCsvFields(m: LineMessage): string[] {
     m.group,
     m.messageType,
     m.processingStatus,
-    m.classification ?? "",
     (m.text ?? "").replace(/\s+/g, " ").trim(),
     attachments,
-    m.linkedTripId ?? "",
   ];
 }
 
@@ -58,13 +54,35 @@ export function messageToCsvLine(m: LineMessage): string {
   return csvLine(messageToCsvFields(m));
 }
 
-/** `messages-2026-08-15.csv`, dated in Asia/Bangkok to match displayed times. */
-export function csvFilename(now: Date): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
+/**
+ * ASCII slug for a group name, used in the download filename. Thai group names
+ * have no useful ASCII form, so anything that reduces to nothing is dropped and
+ * the file falls back to the plain dated name rather than something like
+ * `messages---2026-08-15.csv`.
+ */
+export function slugifyGroup(name: string): string {
+  return name
+    .normalize("NFKD")
+    .replace(/[^\p{ASCII}]/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60)
+    .replace(/-+$/g, "");
+}
+
+/**
+ * `messages-2026-08-15.csv`, or `messages-hi-tech-logistics-2026-08-15.csv`
+ * when the export is scoped to one group — so a folder of exports stays legible
+ * without opening them. Dated in Asia/Bangkok to match the displayed times.
+ */
+export function csvFilename(now: Date, groupName?: string | null): string {
+  const date = new Intl.DateTimeFormat("en-CA", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
     timeZone: "Asia/Bangkok",
   }).format(now);
-  return `messages-${parts}.csv`;
+  const slug = groupName ? slugifyGroup(groupName) : "";
+  return slug ? `messages-${slug}-${date}.csv` : `messages-${date}.csv`;
 }

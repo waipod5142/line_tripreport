@@ -2,33 +2,36 @@
 
 ## What this is
 
-LINE Trip Intelligence — an operations tool that turns LINE transport group chats
-into structured, reviewable trip records. Full spec in `prd.md` (read it before
-non-trivial work; it also carries an "Implementation status" banner reconciling the
-spec with what's built). Owner: GEOID (Thailand). Timezone: Asia/Bangkok.
+**LINE message archive** — captures messages from LINE transport group chats into a
+searchable, per-group, exportable record. Owner: GEOID (Thailand). Timezone:
+Asia/Bangkok.
+
+> **The trip-intelligence product was removed on 17 Aug 2026.** `prd.md` still
+> describes it in full and is now **historical**, not a spec — read it for context
+> only. Trips, the review queue, the dashboard and the whole AI extraction pipeline
+> were deleted at the owner's request; the product is now message capture, filtering
+> and CSV export, nothing more. Do not reintroduce any of it without asking.
 
 ## Current state
 
-**Full stack, wired to live data.** The pipeline runs end to end:
-
-LINE webhook → idempotent ingestion → (manual) AI extraction → deterministic trip
-engine → live operations UI, with Google/email auth and org-scoped RLS.
+The whole pipeline is: **LINE webhook → idempotent ingestion → per-group inbox →
+CSV export**, with Google/email auth and org-scoped RLS.
 
 - **Ingestion is live.** `app/api/webhooks/line/route.ts` verifies the LINE
   signature, stores messages/attachments idempotently, and (in `after()`) retrieves
   attachment binaries into a private Supabase Storage bucket.
-- **AI runs on manual trigger, not automatically.** A message is only extracted
-  when a human clicks **Run AI** (message inbox). There's also **Re-summarise** on a
-  trip and **Accept / Dismiss** on a review item. A pg_cron/pg_net scheduler exists
-  (migration 0011) but is intentionally **UNSCHEDULED** — the product decision was
-  manual firing. Don't re-enable auto-processing without asking.
-- **UI reads live data through `lib/data/*`** (`session`, `messages`, `trips`,
-  `reviews`) using the RLS server client — this is the seam, replacing the old
-  `lib/mock/data.ts`. Mock data is legacy; new screens read from `lib/data/*`.
+- **Groups are allowlisted.** A group the bot joins registers itself as `pending`
+  with a null `organization_id`; its messages are **quarantined** (raw event kept,
+  no `line_messages` row) until an administrator approves it under **Settings →
+  LINE groups**. This is the "add a new group" path — see `setGroupStatusAction`.
+- **No AI, no background workers.** `lib/ai/*`, `lib/trips/*` and the
+  process-message/process-queue endpoints are gone. `app/api/internal/retrieve-attachments`
+  remains (attachment capture only). The pg_cron scheduler from migration 0011 was
+  already UNSCHEDULED and should stay that way.
+- **UI reads live data through `lib/data/*`** (`session`, `messages`, `groups`)
+  using the RLS server client.
 
-Some recent work (reviews Accept/Dismiss wiring, the matcher fix, attachment
-viewing, Re-summarise placement) may live in the working tree ahead of a commit —
-**do not commit, push, or deploy unless explicitly asked.**
+**Do not commit, push, or deploy unless explicitly asked.**
 
 ## Stack
 
@@ -37,57 +40,60 @@ viewing, Re-summarise placement) may live in the working tree ahead of a commit 
   hand-built components in `components/ui/*` — **no shadcn/ui, no TanStack Table**
 - Supabase: Postgres + RLS, Auth (Google OAuth + email magic link, allowlist-gated),
   private Storage bucket `attachments`. Migrations in `supabase/migrations/` (0001–0011).
-- AI: **OpenRouter**, model `moonshotai/kimi-k3` (env `AI_MODEL`). NOT OpenAI.
-  Prompt v1.1 (few-shot Thai), schema v1.0. `OpenRouterExtractor` implements the
-  `TripExtractor` interface.
-- Zod for the AI extraction contract (`lib/ai/schemas.ts`) and summariser
-- Vercel hosting (Hobby: 60s function cap — kimi-k3 is ~52s, so calls are single and
-  synchronous, well within budget)
-- Testing: Vitest unit tests (`tests/unit/*`) — currently 36 across confidence,
-  normalizers, status-engine, signature, matcher. Playwright/RTL are planned, not set up.
+  **The trip/review tables still exist in the database** — only the application code
+  was removed. No migration drops them.
+- Zod for the webhook envelope and server env validation
+- Vercel hosting
+- Testing: Vitest unit tests (`tests/unit/*`) — 36 across signature verification and
+  the message export/filter contract.
 
 ## Key modules
 
 - `lib/line/*` — signature verify, webhook Zod envelope, LINE API client, idempotent
   `ingest`, attachment retrieval.
-- `lib/ai/*` — `extractor` (OpenRouter), `schemas`, `process` (`processMessageById`,
-  supports an `extractionOverride` to replay a stored extraction with no AI call),
-  `summariser`, `queue`, `prompts/extraction`.
-- `lib/trips/*` — the deterministic engine: `normalizers`, `matcher`, `confidence`
-  (thresholds: auto-apply 0.90, review 0.70), `status-engine`, `apply-extraction`
-  (create/update trips, plus `acceptReviewItem` / `dismissReviewItem`).
-- `app/(dashboard)/*/actions.ts` — Server Actions for the manual triggers
-  (writer-only where they mutate; `getAttachmentUrlAction` is any-member view).
-- `app/api/internal/*` — secret-authed (`INTERNAL_JOB_SECRET`) worker endpoints.
+- `lib/data/groups.ts` — `listInboxGroups` (RLS, feeds the filter + export),
+  `listAllGroups` + `countMessagesByGroup` (admin client, feeds Settings).
+- `lib/data/messages.ts` — the paginated inbox read and `iterateMessages`, the
+  batched generator the CSV export streams from.
+- `lib/messages/{filters,csv}.ts` — the filter contract shared by the list and the
+  export, and pure CSV serialization.
+- `app/(dashboard)/settings/actions.ts` — `setGroupStatusAction` (approve / pause a
+  group; admin-only, service-role client).
+
+## The filter contract
+
+`MessageFilters` (`q`, `type`, `status`, `group`) lives in the URL and is the single
+source of truth for **both** the paginated list and the CSV export — the export is
+defined as "everything matching what you're looking at", so the two can never
+disagree. If you add a filter, add it to `parseMessageFilters`, `filtersToQuery`,
+`hasActiveFilters` **and** both query builders in `lib/data/messages.ts`.
+
+`type` and `status` are whitelisted against fixed vocabularies. `group` can't be —
+groups are rows, and a newly approved group must work with no code change — so it is
+gated on **UUID shape** only; RLS does the authorization.
 
 ## Design language — "dispatch console, clean & white"
 
 - Pure white canvas, hairline (`--line`) structure, **one** accent:
-  customs-ink green `--accent` (#0F5C4B). Keep it disciplined — accent only for
-  active nav, primary actions, and the in-transit / journey states.
-- Status hues are low-chroma and defined as CSS vars (`--st-*`). Use the
-  `StatusBadge` / `StatusPill` components, not ad-hoc colors.
+  customs-ink green `--accent` (#0F5C4B). Accent only for active nav and primary
+  actions.
+- Status hues are low-chroma CSS vars (`--st-*`).
 - Type roles: `font-sans` (Plex Sans, headings), `font-thai` (Plex Sans Thai, body
   incl. Thai names), `font-mono` (Plex Mono). **Every operational identifier**
-  (shipment code, container number, plate, timestamp) is set in mono via the
-  `Code` / `CodeChip` components — this is intentional, not decorative.
-- Signature element: the **journey rail** (`components/trips/journey-rail.tsx`).
-  Only render it for the real lifecycle sequence.
+  (LINE group id, timestamp, filename) is set in mono via `Code` / `CodeChip` —
+  intentional, not decorative.
 
 ## Conventions
 
-- Server Components by default; mark client components (`"use client"`) only when
-  they need interactivity (tables with filters, review/AI actions, mobile nav).
-- Money-path / correctness rules (matching, normalization, signature verification)
-  belong in `lib/`, not components. Add tests with them (PRD §19).
-- Dates: store UTC, display Asia/Bangkok via helpers in `lib/utils.ts`. Don't call
-  `new Date()` for display formatting without a timezone.
-- AI never writes to the DB directly. It returns Zod-validated JSON
-  (`lib/ai/schemas.ts`); deterministic rules in `lib/trips/*` decide what to persist
-  (PRD §16, §23).
-- Secrets are server-only. Never import service-role keys or AI keys into client
-  components. Signed URLs for private attachments are minted server-side and scoped
-  to the caller's org via the RLS client.
+- Server Components by default; `"use client"` only for interactivity (inbox
+  filters, group approve/pause, mobile nav).
+- Correctness rules (filter parsing, CSV escaping, signature verification) belong in
+  `lib/`, not components. Add tests with them.
+- Dates: store UTC, display Asia/Bangkok via helpers in `lib/utils.ts`.
+- Secrets are server-only. Signed URLs for private attachments are minted
+  server-side and scoped to the caller's org via the RLS client.
+- The service-role client bypasses RLS — every caller must do its own role check
+  first (see `setGroupStatusAction`).
 - supabase-js typed queries sometimes infer `never` on direct property access — cast
   results via `as unknown as RowType[]` (see `lib/data/*`).
 
@@ -101,10 +107,12 @@ npm test           # vitest run
 npm run build      # production build
 ```
 
-## What's next (see prd.md §20)
+## Known rough edges
 
-Phases 0–3 are substantially built (ingestion, AI + trip engine, operations UI).
-Remaining: Settings/Reviews polish, persisting the remaining review actions
-(Link-to-trip / Reprocess), and Phase 4 hardening — RLS/load tests, monitoring, an
-AI regression set, retention config, and the single-group pilot. Migrations before
-the code that depends on them.
+- `processing_status` is a leftover of the removed pipeline. New text messages still
+  land as `queued` even though nothing consumes a queue; historical rows carry
+  `processed` / `review_required`. The inbox still filters on it. Harmless, but if
+  it ever confuses an operator, the honest fix is to stop writing `queued` in
+  `lib/line/ingest.ts` and backfill.
+- The trip/review tables and their RLS policies are still in the database and in
+  `supabase/migrations/`, now unreferenced by any code.

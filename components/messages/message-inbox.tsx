@@ -4,31 +4,26 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import {
-  Check,
   ChevronLeft,
   ChevronRight,
   Download,
   FileText,
   ImageIcon,
-  Link2,
   Loader2,
   MapPin,
   MessageSquare,
   Search,
-  Sparkles,
   Sticker,
 } from "lucide-react";
-import {
-  processMessageAction,
-  getAttachmentUrlAction,
-} from "@/app/(dashboard)/messages/actions";
+import { getAttachmentUrlAction } from "@/app/(dashboard)/messages/actions";
 import {
   filtersToQuery,
   FILTERABLE_TYPES,
   hasActiveFilters,
   type MessageFilters,
 } from "@/lib/messages/filters";
-import type { Classification, LineMessage, MessageAttachment } from "@/lib/types";
+import type { GroupOption } from "@/lib/data/groups";
+import type { LineMessage, MessageAttachment } from "@/lib/types";
 import { cn, formatDateTime } from "@/lib/utils";
 
 const TYPE_ICON = {
@@ -38,17 +33,6 @@ const TYPE_ICON = {
   location: MapPin,
   sticker: Sticker,
 } as const;
-
-const CLASS_META: Record<Classification, { label: string; hue: string }> = {
-  trip_assignment: { label: "Assignment", hue: "var(--st-blue)" },
-  trip_update: { label: "Update", hue: "var(--st-accent)" },
-  trip_correction: { label: "Correction", hue: "var(--st-amber)" },
-  trip_cancellation: { label: "Cancellation", hue: "var(--st-red)" },
-  attachment_context: { label: "Attachment", hue: "var(--st-violet)" },
-  general_operational_notice: { label: "Notice", hue: "var(--st-teal)" },
-  non_operational: { label: "Non-op", hue: "var(--st-neutral)" },
-  unknown: { label: "Unknown", hue: "var(--st-neutral)" },
-};
 
 const STATUS_HUE: Record<LineMessage["processingStatus"], string> = {
   received: "var(--st-neutral)",
@@ -80,6 +64,7 @@ const STATUS_OPTIONS = [
 
 export function MessageInbox({
   messages,
+  groups,
   filters,
   total,
   page,
@@ -87,6 +72,7 @@ export function MessageInbox({
   pageSize,
 }: {
   messages: LineMessage[];
+  groups: GroupOption[];
   filters: MessageFilters;
   total: number;
   page: number;
@@ -121,7 +107,7 @@ export function MessageInbox({
     }, 350);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, filters.q, filters.type, filters.status, router]);
+  }, [query, filters.q, filters.type, filters.status, filters.group, router]);
 
   const exportQuery = filtersToQuery(filters);
   const firstRow = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -139,6 +125,22 @@ export function MessageInbox({
             className="h-9 w-full rounded border border-line bg-panel pl-8 pr-3 text-sm text-ink placeholder:text-faint focus:border-line-strong focus:bg-canvas focus:outline-none"
           />
         </div>
+        {/* Group is the primary axis: pick one and both the list and the CSV
+            narrow to it. Options come from the DB, so activating a new group in
+            Settings makes it selectable here with no code change. */}
+        <select
+          value={filters.group}
+          onChange={(e) => go({ ...filters, group: e.target.value })}
+          aria-label="Filter by LINE group"
+          className="h-9 max-w-[220px] rounded border border-line bg-canvas px-2.5 text-sm text-ink-soft focus:border-line-strong focus:outline-none"
+        >
+          <option value="all">All groups</option>
+          {groups.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name}
+            </option>
+          ))}
+        </select>
         <select
           value={filters.type}
           onChange={(e) => go({ ...filters, type: e.target.value })}
@@ -199,7 +201,6 @@ export function MessageInbox({
         <ul className="divide-y divide-line">
           {messages.map((m) => {
             const Icon = TYPE_ICON[m.messageType];
-            const cls = m.classification ? CLASS_META[m.classification] : null;
             return (
               <li key={m.id} className="flex gap-3 px-4 py-3 hover:bg-panel">
                 <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-panel-2 text-muted">
@@ -210,9 +211,7 @@ export function MessageInbox({
                     <span className="font-thai text-sm font-medium text-ink">
                       {m.senderName}
                     </span>
-                    <span className="text-2xs text-faint">
-                      {m.group.replace("GEOID • ", "")}
-                    </span>
+                    <span className="text-2xs text-faint">{m.group}</span>
                     <span
                       className="inline-flex items-center gap-1 text-2xs"
                       style={{ color: STATUS_HUE[m.processingStatus] }}
@@ -246,27 +245,6 @@ export function MessageInbox({
                     )
                   )}
 
-                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                    {cls && (
-                      <span
-                        className="rounded px-1.5 py-0.5 text-2xs font-medium"
-                        style={{ color: cls.hue, backgroundColor: `${cls.hue}14` }}
-                      >
-                        {cls.label}
-                      </span>
-                    )}
-                    {m.linkedTripId && (
-                      <Link
-                        href={`/trips/${m.linkedTripId}`}
-                        className="inline-flex items-center gap-1 text-2xs font-medium text-accent hover:text-accent-ink"
-                      >
-                        <Link2 className="h-3 w-3" /> View trip
-                      </Link>
-                    )}
-                    {m.messageType === "text" && (
-                      <RunAiButton messageId={m.id} status={m.processingStatus} />
-                    )}
-                  </div>
                 </div>
               </li>
             );
@@ -388,69 +366,5 @@ function AttachmentChip({ att }: { att: MessageAttachment }) {
       <span className="max-w-[220px] truncate">{att.filename}</span>
       {failed && <span>· failed</span>}
     </button>
-  );
-}
-
-// Manual AI trigger for a single message. Runs synchronously (~50s for
-// kimi-k3), so it shows a pending state and then the outcome inline.
-function RunAiButton({
-  messageId,
-  status,
-}: {
-  messageId: string;
-  status: LineMessage["processingStatus"];
-}) {
-  const [pending, startTransition] = useTransition();
-  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
-
-  const label =
-    status === "processed" || status === "review_required" ? "Re-run AI" : "Run AI";
-
-  const run = () => {
-    setResult(null);
-    startTransition(async () => {
-      const r = await processMessageAction(messageId);
-      if (r.ok) {
-        const msg =
-          r.action === "created"
-            ? "Trip created"
-            : r.action === "updated"
-              ? "Trip updated"
-              : r.action === "review"
-                ? "Sent to review"
-                : "Processed";
-        setResult({ ok: true, msg });
-      } else {
-        setResult({ ok: false, msg: r.error ?? "Failed" });
-      }
-    });
-  };
-
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <button
-        onClick={run}
-        disabled={pending}
-        className="inline-flex items-center gap-1 text-2xs font-medium text-accent hover:text-accent-ink disabled:opacity-60"
-      >
-        {pending ? (
-          <Loader2 className="h-3 w-3 animate-spin" />
-        ) : (
-          <Sparkles className="h-3 w-3" />
-        )}
-        {pending ? "Running AI…" : label}
-      </button>
-      {result && (
-        <span
-          className={cn(
-            "inline-flex items-center gap-0.5 text-2xs",
-            result.ok ? "text-[var(--st-green)]" : "text-[var(--st-red)]",
-          )}
-        >
-          {result.ok && <Check className="h-3 w-3" />}
-          {result.msg}
-        </span>
-      )}
-    </span>
   );
 }

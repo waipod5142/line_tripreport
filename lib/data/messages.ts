@@ -21,7 +21,6 @@ type Row = {
   text_content: string | null;
   sent_at: string;
   processing_status: string;
-  classification: string | null;
   line_groups: { group_name: string | null } | null;
   line_members: { display_name: string | null } | null;
   message_attachments: {
@@ -30,14 +29,12 @@ type Row = {
     mime_type: string | null;
     retrieval_status: string;
   }[];
-  message_trip_links: { trip_id: string }[];
 };
 
-const SELECT = `id, line_message_id, message_type, text_content, sent_at, processing_status, classification,
+const SELECT = `id, line_message_id, message_type, text_content, sent_at, processing_status,
    line_groups ( group_name ),
    line_members ( display_name ),
-   message_attachments ( id, original_filename, mime_type, retrieval_status ),
-   message_trip_links ( trip_id )`;
+   message_attachments ( id, original_filename, mime_type, retrieval_status )`;
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -101,6 +98,7 @@ function baseQuery(
     .from("line_messages")
     .select(SELECT, count ? { count: "exact" } : undefined);
 
+  if (filters.group !== "all") query = query.eq("line_group_id", filters.group);
   if (filters.type !== "all") query = query.eq("message_type", filters.type);
   if (filters.status !== "all") query = query.eq("processing_status", filters.status);
   if (searchClause) query = query.or(searchClause);
@@ -154,6 +152,7 @@ export async function countMessages(filters: MessageFilters): Promise<number> {
   let query = supabase
     .from("line_messages")
     .select("id", { count: "exact", head: true });
+  if (filters.group !== "all") query = query.eq("line_group_id", filters.group);
   if (filters.type !== "all") query = query.eq("message_type", filters.type);
   if (filters.status !== "all") query = query.eq("processing_status", filters.status);
   if (searchClause) query = query.or(searchClause);
@@ -217,8 +216,6 @@ function mapRow(r: Row): LineMessage {
     text: r.text_content,
     sentAt: r.sent_at,
     processingStatus: r.processing_status as LineMessage["processingStatus"],
-    classification: (r.classification as LineMessage["classification"]) ?? null,
-    linkedTripId: r.message_trip_links?.[0]?.trip_id ?? null,
     attachmentName:
       attachments[0]?.filename ??
       r.message_attachments?.[0]?.original_filename ??

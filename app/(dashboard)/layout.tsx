@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { ShieldAlert, Waypoints } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
 import { getCurrentUser } from "@/lib/data/session";
-import { createClient } from "@/lib/supabase/server";
 
 export default async function DashboardLayout({
   children,
@@ -17,16 +16,8 @@ export default async function DashboardLayout({
     return <AccessPending email={user.email} />;
   }
 
-  // Count open review items for the sidebar badge (RLS-scoped to the org).
-  const supabase = await createClient();
-  const { count } = await supabase
-    .from("review_items")
-    .select("id", { count: "exact", head: true })
-    .in("status", ["open", "in_review"]);
-
   return (
     <Shell
-      reviewCount={count ?? 0}
       user={{
         name: user.profile.displayName ?? user.email ?? "User",
         email: user.email ?? "",

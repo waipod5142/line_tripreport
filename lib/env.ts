@@ -12,11 +12,6 @@ const serverSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   LINE_CHANNEL_SECRET: z.string().min(1),
   LINE_CHANNEL_ACCESS_TOKEN: z.string().min(1),
-  AI_PROVIDER: z.string().default("openrouter"),
-  OPENROUTER_API_KEY: z.string().min(1),
-  AI_MODEL: z.string().default("moonshotai/kimi-k3"),
-  OPENROUTER_APP_URL: z.string().url().optional(),
-  OPENROUTER_APP_TITLE: z.string().optional(),
   INTERNAL_JOB_SECRET: z.string().min(1),
   SENTRY_DSN: z.string().optional(),
 });

@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 // OAuth (Google) and email magic links both return here with a `code` under the
-// PKCE flow. We exchange it for a session, then land on the dashboard.
+// PKCE flow. We exchange it for a session, then land on the message inbox.
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/dashboard";
+  const next = searchParams.get("next") ?? "/messages";
 
   if (code) {
     const supabase = await createClient();
