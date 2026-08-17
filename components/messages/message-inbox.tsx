@@ -1,9 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, useTransition } from "react";
 import {
   Check,
+  ChevronLeft,
+  ChevronRight,
   Download,
   FileText,
   ImageIcon,
@@ -19,6 +22,12 @@ import {
   processMessageAction,
   getAttachmentUrlAction,
 } from "@/app/(dashboard)/messages/actions";
+import {
+  filtersToQuery,
+  FILTERABLE_TYPES,
+  hasActiveFilters,
+  type MessageFilters,
+} from "@/lib/messages/filters";
 import type { Classification, LineMessage, MessageAttachment } from "@/lib/types";
 import { cn, formatDateTime } from "@/lib/utils";
 
@@ -51,66 +60,72 @@ const STATUS_HUE: Record<LineMessage["processingStatus"], string> = {
   failed: "var(--st-red)",
 };
 
-export function MessageInbox({ messages }: { messages: LineMessage[] }) {
-  const [query, setQuery] = useState("");
-  const [type, setType] = useState<string>("all");
-  const [status, setStatus] = useState<string>("all");
+const TYPE_LABEL: Record<string, string> = {
+  text: "Text",
+  image: "Image",
+  file: "File",
+  location: "Location",
+  sticker: "Sticker",
+};
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return messages.filter((m) => {
-      if (type !== "all" && m.messageType !== type) return false;
-      if (status !== "all" && m.processingStatus !== status) return false;
-      if (!q) return true;
-      return [m.text, m.senderName, m.group, m.attachmentName]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(q);
+const STATUS_OPTIONS = [
+  ["processed", "Processed"],
+  ["review_required", "Review required"],
+  ["queued", "Queued"],
+  ["processing", "Processing"],
+  ["stored", "Stored"],
+  ["received", "Received"],
+  ["failed", "Failed"],
+] as const;
+
+export function MessageInbox({
+  messages,
+  filters,
+  total,
+  page,
+  pageCount,
+  pageSize,
+}: {
+  messages: LineMessage[];
+  filters: MessageFilters;
+  total: number;
+  page: number;
+  pageCount: number;
+  pageSize: number;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [query, setQuery] = useState(filters.q);
+
+  // Filters live in the URL so the list, the page links and the CSV export all
+  // read from one source of truth — the export can't drift from the view.
+  const go = (next: MessageFilters, nextPage = 1) => {
+    const q = filtersToQuery(next, nextPage);
+    startTransition(() => {
+      router.replace(q ? `/messages?${q}` : "/messages", { scroll: false });
     });
-  }, [messages, query, type, status]);
-
-  // Export the currently filtered view as CSV (Excel-friendly UTF-8 with BOM).
-  const exportCsv = () => {
-    const headers = [
-      "Sent at (Asia/Bangkok)",
-      "Sender",
-      "Group",
-      "Type",
-      "Status",
-      "Classification",
-      "Text",
-      "Attachments",
-      "Linked trip",
-    ];
-    const escape = (v: string | null) =>
-      `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const rows = filtered.map((m) =>
-      [
-        formatDateTime(m.sentAt),
-        m.senderName,
-        m.group,
-        m.messageType,
-        m.processingStatus,
-        m.classification ?? "",
-        (m.text ?? "").replace(/\s+/g, " ").trim(),
-        m.attachments && m.attachments.length > 0
-          ? m.attachments.map((a) => a.filename).join(" | ")
-          : m.attachmentName ?? "",
-        m.linkedTripId ?? "",
-      ]
-        .map(escape)
-        .join(","),
-    );
-    const csv = [headers.map(escape).join(","), ...rows].join("\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `messages-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
+
+  // Re-sync when the URL changes underneath us (back/forward, or the redirect
+  // that clamps an out-of-range page).
+  useEffect(() => setQuery(filters.q), [filters.q]);
+
+  // Debounce typing so each keystroke isn't a round trip.
+  useEffect(() => {
+    if (query === filters.q) return;
+    const t = setTimeout(() => {
+      const q = filtersToQuery({ ...filters, q: query }, 1);
+      startTransition(() => {
+        router.replace(q ? `/messages?${q}` : "/messages", { scroll: false });
+      });
+    }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, filters.q, filters.type, filters.status, router]);
+
+  const exportQuery = filtersToQuery(filters);
+  const firstRow = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const lastRow = firstRow === 0 ? 0 : firstRow + messages.length - 1;
 
   return (
     <div>
@@ -125,45 +140,64 @@ export function MessageInbox({ messages }: { messages: LineMessage[] }) {
           />
         </div>
         <select
-          value={type}
-          onChange={(e) => setType(e.target.value)}
+          value={filters.type}
+          onChange={(e) => go({ ...filters, type: e.target.value })}
           className="h-9 rounded border border-line bg-canvas px-2.5 text-sm text-ink-soft focus:border-line-strong focus:outline-none"
         >
           <option value="all">All types</option>
-          <option value="text">Text</option>
-          <option value="image">Image</option>
-          <option value="file">File</option>
-          <option value="location">Location</option>
+          {FILTERABLE_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {TYPE_LABEL[t]}
+            </option>
+          ))}
         </select>
         <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
+          value={filters.status}
+          onChange={(e) => go({ ...filters, status: e.target.value })}
           className="h-9 rounded border border-line bg-canvas px-2.5 text-sm text-ink-soft focus:border-line-strong focus:outline-none"
         >
           <option value="all">All statuses</option>
-          <option value="processed">Processed</option>
-          <option value="review_required">Review required</option>
-          <option value="queued">Queued</option>
-          <option value="failed">Failed</option>
+          {STATUS_OPTIONS.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
         </select>
-        <button
-          onClick={exportCsv}
-          disabled={filtered.length === 0}
-          className="inline-flex h-9 items-center justify-center gap-1.5 rounded border border-line-strong bg-canvas px-3 text-sm font-medium text-ink-soft hover:bg-panel-2 hover:text-ink disabled:opacity-50"
+        {/* A plain link, not a fetch: the browser streams the file straight to
+            disk, so export size isn't bounded by what the page has loaded. */}
+        <a
+          href={exportQuery ? `/messages/export?${exportQuery}` : "/messages/export"}
+          className={cn(
+            "inline-flex h-9 items-center justify-center gap-1.5 rounded border border-line-strong bg-canvas px-3 text-sm font-medium text-ink-soft hover:bg-panel-2 hover:text-ink",
+            total === 0 && "pointer-events-none opacity-50",
+          )}
+          aria-disabled={total === 0}
         >
           <Download className="h-4 w-4" />
           CSV
-        </button>
+        </a>
       </div>
 
-      <div className="mb-2 text-xs text-muted">
-        <span className="font-medium text-ink-soft tabular">{filtered.length}</span> of{" "}
-        {messages.length} messages
+      <div className="mb-2 flex items-center gap-2 text-xs text-muted">
+        <span>
+          {total === 0 ? (
+            "No matching messages"
+          ) : (
+            <>
+              <span className="font-medium text-ink-soft tabular">
+                {firstRow}–{lastRow}
+              </span>{" "}
+              of <span className="tabular">{total}</span> messages
+            </>
+          )}
+          {hasActiveFilters(filters) && total > 0 && " matching these filters"}
+        </span>
+        {pending && <Loader2 className="h-3 w-3 animate-spin text-faint" />}
       </div>
 
       <div className="overflow-hidden rounded-md border border-line">
         <ul className="divide-y divide-line">
-          {filtered.map((m) => {
+          {messages.map((m) => {
             const Icon = TYPE_ICON[m.messageType];
             const cls = m.classification ? CLASS_META[m.classification] : null;
             return (
@@ -238,13 +272,76 @@ export function MessageInbox({ messages }: { messages: LineMessage[] }) {
             );
           })}
         </ul>
-        {filtered.length === 0 && (
+        {messages.length === 0 && (
           <div className="px-4 py-10 text-center text-sm text-muted">
             No messages match these filters.
           </div>
         )}
       </div>
+
+      {pageCount > 1 && (
+        <div className="mt-3 flex items-center justify-between">
+          <PageLink
+            filters={filters}
+            page={page - 1}
+            disabled={page <= 1}
+            label="Previous"
+          />
+          <span className="font-mono text-2xs tabular text-faint">
+            Page {page} of {pageCount}
+          </span>
+          <PageLink
+            filters={filters}
+            page={page + 1}
+            disabled={page >= pageCount}
+            label="Next"
+          />
+        </div>
+      )}
     </div>
+  );
+}
+
+function PageLink({
+  filters,
+  page,
+  disabled,
+  label,
+}: {
+  filters: MessageFilters;
+  page: number;
+  disabled: boolean;
+  label: "Previous" | "Next";
+}) {
+  const query = filtersToQuery(filters, page);
+  const Icon = label === "Previous" ? ChevronLeft : ChevronRight;
+  const className = cn(
+    "inline-flex h-8 items-center gap-1 rounded border border-line px-2.5 text-xs font-medium text-ink-soft",
+    disabled
+      ? "pointer-events-none opacity-40"
+      : "hover:border-line-strong hover:bg-panel hover:text-ink",
+  );
+
+  if (disabled) {
+    return (
+      <span className={className} aria-disabled>
+        {label === "Previous" && <Icon className="h-3.5 w-3.5" />}
+        {label}
+        {label === "Next" && <Icon className="h-3.5 w-3.5" />}
+      </span>
+    );
+  }
+
+  return (
+    <Link
+      href={query ? `/messages?${query}` : "/messages"}
+      scroll={false}
+      className={className}
+    >
+      {label === "Previous" && <Icon className="h-3.5 w-3.5" />}
+      {label}
+      {label === "Next" && <Icon className="h-3.5 w-3.5" />}
+    </Link>
   );
 }
 
