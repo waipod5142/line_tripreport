@@ -22,7 +22,6 @@ const message = (over: Partial<LineMessage> = {}): LineMessage => ({
   messageType: "text",
   text: "รถถึงด่านแล้ว",
   sentAt: "2026-08-15T03:16:45.779Z",
-  processingStatus: "processed",
   attachmentName: null,
   attachments: [],
   ...over,
@@ -63,7 +62,7 @@ describe("messageToCsvFields", () => {
 
   it("collapses newlines in the message body onto one line", () => {
     const fields = messageToCsvFields(message({ text: "line one\n\nline  two" }));
-    expect(fields[5]).toBe("line one line two");
+    expect(fields[4]).toBe("line one line two");
   });
 
   it("joins multiple attachment filenames", () => {
@@ -75,25 +74,25 @@ describe("messageToCsvFields", () => {
         ],
       }),
     );
-    expect(fields[6]).toBe("cn1.jpg | do.pdf");
+    expect(fields[5]).toBe("cn1.jpg | do.pdf");
   });
 
   it("falls back to the pending attachment name when nothing is stored yet", () => {
     const fields = messageToCsvFields(
       message({ attachments: [], attachmentName: "retrieving.jpg" }),
     );
-    expect(fields[6]).toBe("retrieving.jpg");
+    expect(fields[5]).toBe("retrieving.jpg");
   });
 
   it("blanks the text and attachment fields when there is nothing to say", () => {
     const fields = messageToCsvFields(message({ text: null, attachments: [] }));
+    expect(fields[4]).toBe("");
     expect(fields[5]).toBe("");
-    expect(fields[6]).toBe("");
   });
 
   it("produces one CSV record per message", () => {
     expect(csvLine(messageToCsvFields(message()))).toBe(
-      '"15 Aug 2026, 10:16","สมชาย","Hi Tech Logistics","text","processed","รถถึงด่านแล้ว",""',
+      '"15 Aug 2026, 10:16","สมชาย","Hi Tech Logistics","text","รถถึงด่านแล้ว",""',
     );
   });
 });
@@ -140,25 +139,22 @@ describe("parseMessageFilters", () => {
     expect(parseMessageFilters({})).toEqual({
       q: "",
       type: "all",
-      status: "all",
       group: "all",
     });
   });
 
-  it("keeps whitelisted type and status values", () => {
-    expect(parseMessageFilters({ type: "image", status: "failed" })).toEqual({
+  it("keeps whitelisted type values", () => {
+    expect(parseMessageFilters({ type: "image" })).toEqual({
       q: "",
       type: "image",
-      status: "failed",
       group: "all",
     });
   });
 
   it("coerces unknown values to all, so a hand-edited URL can't probe columns", () => {
-    expect(parseMessageFilters({ type: "'; drop", status: "admin" })).toEqual({
+    expect(parseMessageFilters({ type: "'; drop" })).toEqual({
       q: "",
       type: "all",
-      status: "all",
       group: "all",
     });
   });
@@ -197,7 +193,7 @@ describe("parsePage", () => {
 
 describe("filtersToQuery", () => {
   it("omits defaults so an unfiltered inbox has a clean URL", () => {
-    const empty = { q: "", type: "all", status: "all", group: "all" };
+    const empty = { q: "", type: "all", group: "all" };
     expect(filtersToQuery(empty)).toBe("");
     expect(filtersToQuery(empty, 1)).toBe("");
   });
@@ -206,7 +202,6 @@ describe("filtersToQuery", () => {
     const filters = {
       q: "TPL 6.5",
       type: "image",
-      status: "failed",
       group: GROUP_ID,
     };
     const parsed = parseMessageFilters(

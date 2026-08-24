@@ -34,16 +34,6 @@ const TYPE_ICON = {
   sticker: Sticker,
 } as const;
 
-const STATUS_HUE: Record<LineMessage["processingStatus"], string> = {
-  received: "var(--st-neutral)",
-  stored: "var(--st-neutral)",
-  queued: "var(--st-blue)",
-  processing: "var(--st-blue)",
-  processed: "var(--st-green)",
-  review_required: "var(--st-red)",
-  failed: "var(--st-red)",
-};
-
 const TYPE_LABEL: Record<string, string> = {
   text: "Text",
   image: "Image",
@@ -51,16 +41,6 @@ const TYPE_LABEL: Record<string, string> = {
   location: "Location",
   sticker: "Sticker",
 };
-
-const STATUS_OPTIONS = [
-  ["processed", "Processed"],
-  ["review_required", "Review required"],
-  ["queued", "Queued"],
-  ["processing", "Processing"],
-  ["stored", "Stored"],
-  ["received", "Received"],
-  ["failed", "Failed"],
-] as const;
 
 export function MessageInbox({
   messages,
@@ -107,7 +87,7 @@ export function MessageInbox({
     }, 350);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, filters.q, filters.type, filters.status, filters.group, router]);
+  }, [query, filters.q, filters.type, filters.group, router]);
 
   const exportQuery = filtersToQuery(filters);
   const firstRow = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -150,18 +130,6 @@ export function MessageInbox({
           {FILTERABLE_TYPES.map((t) => (
             <option key={t} value={t}>
               {TYPE_LABEL[t]}
-            </option>
-          ))}
-        </select>
-        <select
-          value={filters.status}
-          onChange={(e) => go({ ...filters, status: e.target.value })}
-          className="h-9 rounded border border-line bg-canvas px-2.5 text-sm text-ink-soft focus:border-line-strong focus:outline-none"
-        >
-          <option value="all">All statuses</option>
-          {STATUS_OPTIONS.map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
             </option>
           ))}
         </select>
@@ -212,16 +180,6 @@ export function MessageInbox({
                       {m.senderName}
                     </span>
                     <span className="text-2xs text-faint">{m.group}</span>
-                    <span
-                      className="inline-flex items-center gap-1 text-2xs"
-                      style={{ color: STATUS_HUE[m.processingStatus] }}
-                    >
-                      <span
-                        className="h-1.5 w-1.5 rounded-full"
-                        style={{ backgroundColor: STATUS_HUE[m.processingStatus] }}
-                      />
-                      {m.processingStatus.replace("_", " ")}
-                    </span>
                     <span className="ml-auto font-mono text-2xs tabular text-faint">
                       {formatDateTime(m.sentAt)}
                     </span>

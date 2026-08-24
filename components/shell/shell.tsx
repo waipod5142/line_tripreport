@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
+  LayoutDashboard,
   LogOut,
   type LucideIcon,
   Menu,
@@ -45,6 +46,7 @@ export function Shell({
   const [open, setOpen] = useState(false);
 
   const nav: NavItem[] = [
+    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/messages", label: "Messages", icon: MessageSquare },
     { href: "/settings", label: "Settings", icon: Settings },
   ];

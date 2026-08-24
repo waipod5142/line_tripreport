@@ -20,7 +20,6 @@ type Row = {
   message_type: string;
   text_content: string | null;
   sent_at: string;
-  processing_status: string;
   line_groups: { group_name: string | null } | null;
   line_members: { display_name: string | null } | null;
   message_attachments: {
@@ -31,7 +30,7 @@ type Row = {
   }[];
 };
 
-const SELECT = `id, line_message_id, message_type, text_content, sent_at, processing_status,
+const SELECT = `id, line_message_id, message_type, text_content, sent_at,
    line_groups ( group_name ),
    line_members ( display_name ),
    message_attachments ( id, original_filename, mime_type, retrieval_status )`;
@@ -100,7 +99,6 @@ function baseQuery(
 
   if (filters.group !== "all") query = query.eq("line_group_id", filters.group);
   if (filters.type !== "all") query = query.eq("message_type", filters.type);
-  if (filters.status !== "all") query = query.eq("processing_status", filters.status);
   if (searchClause) query = query.or(searchClause);
 
   return query
@@ -154,7 +152,6 @@ export async function countMessages(filters: MessageFilters): Promise<number> {
     .select("id", { count: "exact", head: true });
   if (filters.group !== "all") query = query.eq("line_group_id", filters.group);
   if (filters.type !== "all") query = query.eq("message_type", filters.type);
-  if (filters.status !== "all") query = query.eq("processing_status", filters.status);
   if (searchClause) query = query.or(searchClause);
 
   const { count, error } = await query;
@@ -215,7 +212,6 @@ function mapRow(r: Row): LineMessage {
     messageType: type,
     text: r.text_content,
     sentAt: r.sent_at,
-    processingStatus: r.processing_status as LineMessage["processingStatus"],
     attachmentName:
       attachments[0]?.filename ??
       r.message_attachments?.[0]?.original_filename ??

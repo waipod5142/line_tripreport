@@ -141,7 +141,6 @@ export type Database = {
           line_message_id: string | null
           message_type: string
           organization_id: string | null
-          processing_status: string
           quoted_line_message_id: string | null
           raw_message: Json
           sent_at: string
@@ -158,7 +157,6 @@ export type Database = {
           line_message_id?: string | null
           message_type: string
           organization_id?: string | null
-          processing_status?: string
           quoted_line_message_id?: string | null
           raw_message: Json
           sent_at: string
@@ -175,7 +173,6 @@ export type Database = {
           line_message_id?: string | null
           message_type?: string
           organization_id?: string | null
-          processing_status?: string
           quoted_line_message_id?: string | null
           raw_message?: Json
           sent_at?: string
@@ -184,6 +181,13 @@ export type Database = {
           webhook_event_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "line_messages_line_group_id_fkey"
+            columns: ["line_group_id"]
+            isOneToOne: false
+            referencedRelation: "group_message_stats"
+            referencedColumns: ["line_group_id"]
+          },
           {
             foreignKeyName: "line_messages_line_group_id_fkey"
             columns: ["line_group_id"]
@@ -407,11 +411,69 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      group_daily_counts: {
+        Row: {
+          day: string | null
+          line_group_id: string | null
+          n: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "line_messages_line_group_id_fkey"
+            columns: ["line_group_id"]
+            isOneToOne: false
+            referencedRelation: "group_message_stats"
+            referencedColumns: ["line_group_id"]
+          },
+          {
+            foreignKeyName: "line_messages_line_group_id_fkey"
+            columns: ["line_group_id"]
+            isOneToOne: false
+            referencedRelation: "line_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_message_stats: {
+        Row: {
+          first_message_at: string | null
+          group_name: string | null
+          images: number | null
+          images_today: number | null
+          last_7d: number | null
+          last_message_at: string | null
+          line_group_id: string | null
+          organization_id: string | null
+          prior_7d: number | null
+          senders_7d: number | null
+          senders_today: number | null
+          status: string | null
+          texts: number | null
+          today: number | null
+          total: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "line_groups_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       auth_org_id: { Args: never; Returns: string }
       auth_role: { Args: never; Returns: string }
+      count_keyword_matches: {
+        Args: { p_since?: string; p_stems: string[] }
+        Returns: {
+          line_group_id: string
+          n: number
+          stem: string
+        }[]
+      }
       is_org_writer: { Args: never; Returns: boolean }
     }
     Enums: {

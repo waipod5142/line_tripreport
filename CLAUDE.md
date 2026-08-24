@@ -12,8 +12,9 @@ Timezone: Asia/Bangkok. Thai is the primary language of the message content.
 LINE group chat
   └─ POST /api/webhooks/line     signature-verified, idempotent
        └─ line_messages (+ attachment binaries → private Storage bucket)
-            └─ /messages         search · filter by group/type/status · paginate
-                 └─ /messages/export   streamed CSV of the current filter
+            ├─ /messages         search · filter by group/type · paginate
+            │    └─ /messages/export   streamed CSV of the current filter
+            └─ /dashboard        per-group volume, health alerts, keyword counts
 ```
 
 ## Not in this project
@@ -35,8 +36,9 @@ spec** — it carries a SUPERSEDED banner. Trust this file and the code over it.
 - Supabase: Postgres + RLS, Auth (Google OAuth + email magic link, allowlist-gated),
   private Storage bucket `attachments`
 - Zod for the webhook envelope and server env validation
-- Vitest (`tests/unit/*`) — 36 tests over signature verification and the
-  export/filter contract. No component or E2E tests are set up.
+- Vitest (`tests/unit/*`) — 54 tests over signature verification, the
+  export/filter contract and the dashboard's derivations. No component or E2E
+  tests are set up.
 - Hosted on Vercel
 
 ## Database
@@ -58,6 +60,16 @@ spec** — it carries a SUPERSEDED banner. Trust this file and the code over it.
 code queries them, but `organizations` anchors every foreign key and
 `allowed_emails` is read by the `handle_new_user` trigger — dropping it silently
 breaks profile provisioning for new logins.
+
+Plus two views and one function for the dashboard (migration 0013):
+`group_message_stats`, `group_daily_counts`, `count_keyword_matches()`.
+
+> **Any new view MUST be created `with (security_invoker = true)`.** Views run
+> with their *owner's* rights by default and PostgREST auto-exposes everything in
+> `public`, so without the flag a view serves every org's rows to any signed-in
+> user, straight past RLS. Same for functions: leave them `security invoker`
+> (the default). Getting this wrong is a data leak, not a bug, and a
+> "does the page render" check passes either way — verify with the anon key.
 
 After any migration, regenerate `lib/supabase/types.ts` (Supabase MCP
 `generate_typescript_types`), or supabase-js types against a stale schema.
@@ -81,7 +93,7 @@ If someone reports "my new group isn't showing up", this is why.
 
 ### 2. The filter contract binds the list and the export together
 
-`MessageFilters` (`q`, `type`, `status`, `group`) lives in the URL and is the single
+`MessageFilters` (`q`, `type`, `group`) lives in the URL and is the single
 source of truth for **both** the paginated list and the CSV export. The export is
 defined as *everything matching what you're currently looking at* — so the two can
 never disagree, and export size isn't bounded by what the page loaded.
@@ -89,15 +101,16 @@ never disagree, and export size isn't bounded by what the page loaded.
 Adding a filter means touching all five: `parseMessageFilters`, `filtersToQuery`,
 `hasActiveFilters`, and **both** query builders in `lib/data/messages.ts`.
 
-`type` and `status` are whitelisted against fixed vocabularies. `group` cannot be —
+`type` is whitelisted against a fixed vocabulary. `group` cannot be —
 groups are rows, and a newly approved group must work with no code change — so it is
 validated on **UUID shape** only, and RLS does the authorization.
 
 ## Layout
 
-Routes: `/login`, `/messages`, `/messages/export`, `/settings`, plus
+Routes: `/login`, `/dashboard`, `/messages`, `/messages/export`, `/settings`, plus
 `/api/webhooks/line`, `/api/internal/retrieve-attachments`, and the auth callbacks.
-`/` redirects to `/messages`.
+`/` redirects to `/messages` — the inbox is where the work happens; the dashboard
+is a glance, not a destination.
 
 - `lib/line/*` — signature verify (raw-body HMAC-SHA256, timing-safe), Zod webhook
   envelope, LINE API client, idempotent `ingest`, attachment retrieval
@@ -105,8 +118,12 @@ Routes: `/login`, `/messages`, `/messages/export`, `/settings`, plus
   `messages` (paginated read + `iterateMessages`, the batched generator the export
   streams from), `groups` (`listInboxGroups` for the filter; `listAllGroups` +
   `countMessagesByGroup` for Settings, admin client), `session`
-- `lib/messages/*` — `filters` (the contract above) and `csv` (pure serialization:
-  RFC 4180 quoting plus spreadsheet-formula neutralisation)
+- `lib/messages/*` — `filters` (the contract above), `csv` (pure serialization:
+  RFC 4180 quoting plus spreadsheet-formula neutralisation) and `keywords` (the
+  dashboard's Thai vocabulary — read the header before editing it)
+- `lib/dashboard/metrics.ts` — pure dashboard logic (alert thresholds, when a
+  trend is meaningless). Deliberately split from `lib/data/stats.ts`, which is
+  `server-only`: tests can't import a `server-only` module.
 - `lib/supabase/*` — `client` (browser), `server` (RLS, RSC/route handlers),
   `admin` (service role), `middleware` (session refresh + route gating)
 
@@ -153,11 +170,18 @@ npm run build      # production build
   is fine. `rm -rf .next` before believing a failure.
 - **Lint errors are fatal to the build** — notably
   `react/no-unescaped-entities` (use `’`, not `'`).
-- `processing_status` on `line_messages` is vestigial. New text messages land as
-  `queued` though nothing consumes a queue, and old rows still carry `processed` /
-  `review_required`. The inbox filters on it. If it ever confuses an operator, the
-  honest fix is to stop writing `queued` in `lib/line/ingest.ts` and backfill.
+- **`webhook_events.processing_status` is real; there is no longer one on
+  `line_messages`.** The latter drove the removed AI queue and had decayed into a
+  restatement of `message_type` (`text`→queued, `image`→stored, …), so migration
+  0014 dropped it. The one on `webhook_events` records whether a raw LINE
+  delivery stored or failed — that's the only signal ingestion itself broke.
 - Early migrations create trip-engine objects that a later migration drops. A fresh
   replay is correct, just wasteful — don't retro-edit migrations that have been
   applied.
+- **`@supabase/ssr` is pinned at 0.5.2 and its client doesn't propagate the `Args`
+  generic to `.rpc()`** — TypeScript collapses the argument to `undefined` and
+  rejects every call, even though the generated types are right and the same call
+  on a plain `supabase-js` client compiles. `fetchKeywordCounts` in
+  `lib/data/stats.ts` is the one place that casts around it. The real fix is
+  upgrading to 0.7.x, which needs an auth/middleware review.
 - The npm package name is still `line-trip-intelligence`. Cosmetic only.

@@ -9,7 +9,6 @@ export const CSV_HEADERS = [
   "Sender",
   "Group",
   "Type",
-  "Status",
   "Text",
   "Attachments",
 ] as const;
@@ -44,7 +43,6 @@ export function messageToCsvFields(m: LineMessage): string[] {
     m.senderName,
     m.group,
     m.messageType,
-    m.processingStatus,
     (m.text ?? "").replace(/\s+/g, " ").trim(),
     attachments,
   ];
