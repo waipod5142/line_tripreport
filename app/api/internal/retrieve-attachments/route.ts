@@ -1,6 +1,6 @@
-import crypto from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { serverEnv } from "@/lib/env";
+import { isInternalRequest } from "@/lib/internal-auth";
 import { retrievePendingAttachments } from "@/lib/line/attachments";
 
 export const runtime = "nodejs";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(req: NextRequest) {
   const env = serverEnv();
-  if (!authorized(req, env.INTERNAL_JOB_SECRET)) {
+  if (!isInternalRequest(req.headers, env.INTERNAL_JOB_SECRET)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
@@ -22,14 +22,4 @@ export async function POST(req: NextRequest) {
 
   const summary = await retrievePendingAttachments(limit);
   return NextResponse.json({ ok: true, ...summary });
-}
-
-function authorized(req: NextRequest, secret: string): boolean {
-  const header =
-    req.headers.get("x-internal-secret") ??
-    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
-    "";
-  const a = Buffer.from(header);
-  const b = Buffer.from(secret);
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }

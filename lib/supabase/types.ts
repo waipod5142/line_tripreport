@@ -358,6 +358,148 @@ export type Database = {
           },
         ]
       }
+      shipment_events: {
+        Row: {
+          confirmed_by: string | null
+          created_at: string
+          id: string
+          line_message_id: string | null
+          occurred_at: string
+          organization_id: string
+          shipment_id: string
+          source: string
+          stage: string
+          status: string
+        }
+        Insert: {
+          confirmed_by?: string | null
+          created_at?: string
+          id?: string
+          line_message_id?: string | null
+          occurred_at: string
+          organization_id: string
+          shipment_id: string
+          source?: string
+          stage: string
+          status?: string
+        }
+        Update: {
+          confirmed_by?: string | null
+          created_at?: string
+          id?: string
+          line_message_id?: string | null
+          occurred_at?: string
+          organization_id?: string
+          shipment_id?: string
+          source?: string
+          stage?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shipment_events_confirmed_by_fkey"
+            columns: ["confirmed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipment_events_line_message_id_fkey"
+            columns: ["line_message_id"]
+            isOneToOne: false
+            referencedRelation: "line_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipment_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipment_events_shipment_id_fkey"
+            columns: ["shipment_id"]
+            isOneToOne: false
+            referencedRelation: "shipments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shipments: {
+        Row: {
+          city: string | null
+          created_at: string
+          delivery_date: string | null
+          delivery_date_end: string | null
+          driver_name: string | null
+          driver_phone: string | null
+          id: string
+          organization_id: string
+          pallets: number | null
+          plan_date: string
+          plate: string | null
+          province: string | null
+          qty: number | null
+          section: string | null
+          ship_to_code: string | null
+          ship_to_name: string | null
+          shipment_no: string
+          time_window: string | null
+          updated_at: string
+        }
+        Insert: {
+          city?: string | null
+          created_at?: string
+          delivery_date?: string | null
+          delivery_date_end?: string | null
+          driver_name?: string | null
+          driver_phone?: string | null
+          id?: string
+          organization_id: string
+          pallets?: number | null
+          plan_date: string
+          plate?: string | null
+          province?: string | null
+          qty?: number | null
+          section?: string | null
+          ship_to_code?: string | null
+          ship_to_name?: string | null
+          shipment_no: string
+          time_window?: string | null
+          updated_at?: string
+        }
+        Update: {
+          city?: string | null
+          created_at?: string
+          delivery_date?: string | null
+          delivery_date_end?: string | null
+          driver_name?: string | null
+          driver_phone?: string | null
+          id?: string
+          organization_id?: string
+          pallets?: number | null
+          plan_date?: string
+          plate?: string | null
+          province?: string | null
+          qty?: number | null
+          section?: string | null
+          ship_to_code?: string | null
+          ship_to_name?: string | null
+          shipment_no?: string
+          time_window?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shipments_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       webhook_events: {
         Row: {
           created_at: string

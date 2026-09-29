@@ -11,6 +11,13 @@ export interface CurrentUser {
   } | null;
 }
 
+/** Mirrors public.is_org_writer() — keep the two lists in step. */
+const WRITER_ROLES = ["system_administrator", "operations_manager", "dispatcher"];
+
+export function isOrgWriter(user: CurrentUser | null): boolean {
+  return !!user?.profile && WRITER_ROLES.includes(user.profile.role);
+}
+
 /**
  * The signed-in user plus their profile. profile is null when the user is
  * authenticated but not allowlisted (no provisioned profile → RLS grants no
