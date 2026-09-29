@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/lib/supabase/types";
 import { LineClient } from "@/lib/line/client";
+import { rejectSuggestionsForMessages, suggestFromMessage } from "@/lib/shipments/suggest";
 import {
   MEDIA_MESSAGE_TYPES,
   type LineEvent,
@@ -183,6 +184,27 @@ async function handleEvent(
     });
   }
 
+  // Shipment stage suggestions. Strictly best-effort: the message is already
+  // stored, and throwing here would mark the delivery failed and make LINE
+  // redeliver a message we have — so log and carry on.
+  if (msg.type === "text" && msg.text) {
+    try {
+      await suggestFromMessage(admin, orgId, {
+        id: msgRow.id,
+        text: msg.text,
+        sentAt: new Date(event.timestamp).toISOString(),
+      });
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          stage: "shipment_suggest",
+          messageId: msgRow.id,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+  }
+
   return "stored";
 }
 
@@ -276,8 +298,23 @@ async function upsertMember(
 
 async function applyUnsend(admin: Admin, lineMessageId: string): Promise<void> {
   // FR-LINE-012: mark unavailable and redact the text.
-  await admin
+  const { data } = await admin
     .from("line_messages")
     .update({ is_unsent: true, text_content: null })
-    .eq("line_message_id", lineMessageId);
+    .eq("line_message_id", lineMessageId)
+    .select("id");
+
+  // The evidence is gone, so its pending stage suggestions go too. Best-effort
+  // for the same reason as suggestFromMessage in handleEvent.
+  try {
+    await rejectSuggestionsForMessages(admin, (data ?? []).map((m) => m.id));
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        stage: "shipment_unsend",
+        lineMessageId,
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
 }

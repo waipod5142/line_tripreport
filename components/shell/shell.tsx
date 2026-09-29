@@ -10,6 +10,7 @@ import {
   Menu,
   MessageSquare,
   Settings,
+  Truck,
   Waypoints,
   X,
 } from "lucide-react";
@@ -48,6 +49,7 @@ export function Shell({
   const nav: NavItem[] = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/messages", label: "Messages", icon: MessageSquare },
+    { href: "/shipments", label: "Shipments", icon: Truck },
     { href: "/settings", label: "Settings", icon: Settings },
   ];
 
